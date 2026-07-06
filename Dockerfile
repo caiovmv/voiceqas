@@ -96,6 +96,8 @@ ENV CMAKE_MAKE_PROGRAM=/usr/bin/ninja \
     VCPKG_BINARY_SOURCES=clear;files,/opt/vcpkg/bincache,readwrite \
     VCPKG_INSTALLED_DIR=/src/vcpkg_installed
 
+SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+
 WORKDIR /src
 
 # --- Layer A: manifest vcpkg (invalida só quando vcpkg.json / baseline mudam) ---
@@ -137,66 +139,46 @@ RUN --mount=type=cache,target=/opt/vcpkg/downloads,id=voiceqas-vcpkg-dl \
     && cmake --build build -j"$(nproc)"
 
 # Metadados de versões resolvidas no build
-RUN <<BASH
-#!/bin/bash
-set -euo pipefail
-
-{
-  echo "# voiceqas build versions"
-  echo "generated_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "cpp_standard: ${CPP_STD}"
-  echo "vcpkg_baseline: ${VCPKG_BASELINE}"
-  g++ --version | head -1 | sed 's/^/gcc: /'
-  cmake --version | head -1 | sed 's/^/cmake: /'
-  echo "vcpkg_triplet: ${VCPKG_DEFAULT_TRIPLET}"
-  echo ""
-  echo "# pinned overrides (vcpkg.json)"
-  echo "nlohmann-json: ${NLOHMANN_JSON_VERSION}"
-  echo "cpp-httplib: ${CPP_HTTPLIB_VERSION}"
-  echo "yaml-cpp: ${YAML_CPP_VERSION}"
-  echo "gtest: ${GTEST_VERSION} (build-time feature test only)"
-  echo ""
-  echo "# resolved by vcpkg"
-  "${VCPKG_ROOT}/vcpkg" list | grep -E '^(grpc|protobuf|boost-beast|nlohmann-json|cpp-httplib|yaml-cpp|bcg729):' || true
-} > /src/build/dependency-versions.txt
-
-cat /src/build/dependency-versions.txt
-BASH
+RUN { \
+  echo "# voiceqas build versions"; \
+  echo "generated_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+  echo "cpp_standard: ${CPP_STD}"; \
+  echo "vcpkg_baseline: ${VCPKG_BASELINE}"; \
+  g++ --version | head -1 | sed 's/^/gcc: /'; \
+  cmake --version | head -1 | sed 's/^/cmake: /'; \
+  echo "vcpkg_triplet: ${VCPKG_DEFAULT_TRIPLET}"; \
+  echo ""; \
+  echo "# pinned overrides (vcpkg.json)"; \
+  echo "nlohmann-json: ${NLOHMANN_JSON_VERSION}"; \
+  echo "cpp-httplib: ${CPP_HTTPLIB_VERSION}"; \
+  echo "yaml-cpp: ${YAML_CPP_VERSION}"; \
+  echo "gtest: ${GTEST_VERSION} (build-time feature test only)"; \
+  echo ""; \
+  echo "# resolved by vcpkg"; \
+  "${VCPKG_ROOT}/vcpkg" list | grep -E '^(grpc|protobuf|boost-beast|nlohmann-json|cpp-httplib|yaml-cpp|bcg729):' || true; \
+} > /src/build/dependency-versions.txt && cat /src/build/dependency-versions.txt
 
 # Empacota binário + libs de runtime (_deps é cache mount — montar aqui também)
 RUN --mount=type=cache,target=/src/build/_deps,id=voiceqas-fetchcontent-shared-ort \
-<<'BASH'
-#!/bin/bash
-set -euo pipefail
-# package runtime artifacts (v3: mount _deps for libonnxruntime.so)
-mkdir -p /runtime/bin /runtime/lib /runtime/share
-
-cp /src/build/voiceqas-server /runtime/bin/
-cp /src/build/dependency-versions.txt /runtime/share/
-
-# libs compartilhadas do sherpa-onnx / onnxruntime (BUILD_SHARED_LIBS=ON)
-find /src/build -name 'libonnxruntime.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true
-find /src/build/lib -maxdepth 1 -name 'libsherpa-onnx*.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true
-
-if [[ -d "/src/vcpkg_installed/${VCPKG_DEFAULT_TRIPLET}/lib" ]]; then
-  cp -a "/src/vcpkg_installed/${VCPKG_DEFAULT_TRIPLET}/lib/"*.so* /runtime/lib/ 2>/dev/null || true
-fi
-
-# Copia só libs não-sistema do ldd (nunca libc/ld-linux do builder — quebra o runtime).
-while IFS= read -r lib; do
-  [[ -f "${lib}" ]] || continue
-  case "${lib}" in
-    */libc.so*|*/ld-linux*|*/libm.so*|*/libpthread.so*|*/libdl.so*|*/librt.so*|*/libresolv.so*) continue ;;
-  esac
-  cp -Ln "${lib}" /runtime/lib/
-done < <(ldd /src/build/voiceqas-server | awk '/=> \// {print $3}' | sort -u)
-
-LIBSTDCPP="$(gcc -print-file-name=libstdc++.so.6)"
-[[ -f "${LIBSTDCPP}" ]] && cp -Ln "${LIBSTDCPP}" /runtime/lib/
-
-LIBGCC="$(gcc -print-file-name=libgcc_s.so.1)"
+mkdir -p /runtime/bin /runtime/lib /runtime/share && \
+cp /src/build/voiceqas-server /runtime/bin/ && \
+cp /src/build/dependency-versions.txt /runtime/share/ && \
+find /src/build -name 'libonnxruntime.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true && \
+find /src/build/lib -maxdepth 1 -name 'libsherpa-onnx*.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true && \
+if [[ -d "/src/vcpkg_installed/${VCPKG_DEFAULT_TRIPLET}/lib" ]]; then \
+  cp -a "/src/vcpkg_installed/${VCPKG_DEFAULT_TRIPLET}/lib/"*.so* /runtime/lib/ 2>/dev/null || true; \
+fi && \
+while IFS= read -r lib; do \
+  [[ -f "${lib}" ]] || continue; \
+  case "${lib}" in \
+    */libc.so*|*/ld-linux*|*/libm.so*|*/libpthread.so*|*/libdl.so*|*/librt.so*|*/libresolv.so*) continue ;; \
+  esac; \
+  cp -Ln "${lib}" /runtime/lib/; \
+done < <(ldd /src/build/voiceqas-server | awk '/=> \// {print $3}' | sort -u) && \
+LIBSTDCPP="$(gcc -print-file-name=libstdc++.so.6)" && \
+[[ -f "${LIBSTDCPP}" ]] && cp -Ln "${LIBSTDCPP}" /runtime/lib/ && \
+LIBGCC="$(gcc -print-file-name=libgcc_s.so.1)" && \
 [[ -f "${LIBGCC}" ]] && cp -Ln "${LIBGCC}" /runtime/lib/
-BASH
 
 # -----------------------------------------------------------------------------
 # Stage 3: runtime mínimo
