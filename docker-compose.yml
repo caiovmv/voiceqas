@@ -1,0 +1,58 @@
+services:
+  voiceqas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GCC_VERSION: "15"
+        CMAKE_MIN_VERSION: "3.31"
+        CPP_STD: "c++26"
+        VCPKG_BASELINE: "d87340acc46bdeda386037b38aca30136e667e47"
+        DEBIAN_RUNTIME: trixie-slim
+        NLOHMANN_JSON_VERSION: "3.12.0"
+        CPP_HTTPLIB_VERSION: "0.48.0"
+        YAML_CPP_VERSION: "0.9.0"
+        GTEST_VERSION: "1.17.0"
+    image: voiceqas:local
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+      - "50051:50051"
+    environment:
+      VOICEQAS_STT_THRESHOLD: "65"
+      VOICEQAS_STT_LANGUAGE: "pt"
+      VOICEQAS_STT_DEFAULT_MODEL: "auto"
+      VOICEQAS_STT_MODELS_DIR: "/models/stt"
+      VOICEQAS_STT_THREADS: "2"
+    volumes:
+      - stt-models:/models/stt:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 6G
+
+  tester-web:
+    build:
+      context: ./tester-web
+      dockerfile: Dockerfile
+    image: voiceqas-tester:local
+    ports:
+      - "3000:80"
+    depends_on:
+      - voiceqas
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+
+volumes:
+  stt-models:

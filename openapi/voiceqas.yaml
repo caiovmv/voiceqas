@@ -1,0 +1,432 @@
+openapi: 3.0.3
+info:
+  title: voiceqas API
+  version: 0.1.0
+  description: |
+    Avaliação de qualidade de voz para áudio de tronco SIP e gate STT-ready.
+
+    Documentação interativa:
+    - Swagger UI: `/docs/swagger`
+    - ReDoc: `/docs/redoc`
+    - Console web: `/ui/`
+servers:
+  - url: http://localhost:8080
+    description: REST + docs + playground gRPC
+paths:
+  /health:
+    get:
+      tags: [ops]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /ready:
+    get:
+      tags: [ops]
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+  /v1/stt/ready:
+    get:
+      tags: [stt]
+      summary: STT engine readiness (sherpa-onnx embedded)
+      responses:
+        '200':
+          description: STT engine status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SttReadyResponse'
+  /v1/stt/transcribe:
+    post:
+      tags: [stt]
+      summary: Transcrever áudio (batch) — Parakeet v3 / Whisper turbo
+      description: |
+        STT in-process via sherpa-onnx. Aceita WAV, PCM raw ou RTP (via headers).
+        Modelo selecionável por header `X-STT-Model` ou query `?model=`.
+      parameters:
+        - in: header
+          name: X-Sample-Rate
+          schema:
+            type: integer
+            example: 16000
+        - in: header
+          name: X-Audio-Format
+          schema:
+            type: string
+            enum: [pcm_s16le_8k, pcm_s16le_16k, rtp_pcmu, rtp_pcma, rtp_g722, rtp_g729]
+        - in: header
+          name: X-Language
+          schema:
+            type: string
+            example: pt
+        - in: header
+          name: X-STT-Model
+          schema:
+            $ref: '#/components/schemas/SttModelChoice'
+        - in: query
+          name: model
+          schema:
+            $ref: '#/components/schemas/SttModelChoice'
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Transcrição
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SttTranscribeResponse'
+        '502':
+          description: STT engine error
+  /v1/stt/transcribe/segment:
+    post:
+      tags: [stt]
+      summary: Transcrever segmento JSON (pcm_bytes + format)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SttSegmentRequest'
+      responses:
+        '200':
+          description: Transcrição
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SttTranscribeResponse'
+  /v1/playground/grpc/stt-transcribe:
+    post:
+      tags: [stt, playground]
+      summary: Playground REST bridge para STT gRPC (batch)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SttSegmentRequest'
+      responses:
+        '200':
+          description: Transcrição
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SttTranscribeResponse'
+        '502':
+          description: STT engine error
+  /v1/analyze/batch:
+    post:
+      tags: [analysis]
+      summary: Analyze audio batch (WAV or raw PCM)
+      parameters:
+        - in: header
+          name: X-Sample-Rate
+          schema:
+            type: integer
+            example: 8000
+        - in: header
+          name: X-Audio-Format
+          schema:
+            type: string
+            enum: [pcm_s16le_8k, pcm_s16le_16k, rtp_pcmu, rtp_pcma, rtp_g722, rtp_g729]
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Batch analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResult'
+  /v1/analyze/segment:
+    post:
+      tags: [analysis]
+      summary: Analyze PCM segment from JSON
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SegmentRequest'
+      responses:
+        '200':
+          description: Batch analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResult'
+  /v1/playground/grpc/ready:
+    get:
+      tags: [playground]
+      summary: gRPC Ready (HTTP bridge)
+      description: Espelha `VoiceQualityService.Ready` para testes no browser.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrpcReadyResponse'
+    post:
+      tags: [playground]
+      summary: gRPC Ready (HTTP bridge)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrpcReadyResponse'
+  /v1/playground/grpc/analyze-batch:
+    post:
+      tags: [playground]
+      summary: gRPC AnalyzeBatch (HTTP bridge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrpcBatchRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResult'
+  /v1/playground/grpc/analyze-stream:
+    post:
+      tags: [playground]
+      summary: gRPC AnalyzeStream (SSE bridge)
+      description: Retorna `text/event-stream` com QualityReport por janela.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrpcStreamRequest'
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    ReadyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        interfaces:
+          type: array
+          items:
+            type: string
+        docs:
+          type: object
+    GrpcReadyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        note:
+          type: string
+    SttReadyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        language:
+          type: string
+        default_model:
+          $ref: '#/components/schemas/SttModelChoice'
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                $ref: '#/components/schemas/SttModelChoice'
+              name:
+                type: string
+              ready:
+                type: boolean
+    SttModelChoice:
+      type: string
+      enum: [parakeet, whisper, auto]
+      description: |
+        parakeet = NeMo Parakeet TDT 0.6B v3 int8;
+        whisper = Whisper large-v3-turbo pt (call center via whisper_callcenter_dir);
+        auto = parakeet com fallback whisper se vazio/falha
+    SttSegment:
+      type: object
+      properties:
+        start_ms:
+          type: integer
+        end_ms:
+          type: integer
+        text:
+          type: string
+    SttTranscribeResponse:
+      type: object
+      properties:
+        text:
+          type: string
+        model:
+          type: string
+        language:
+          type: string
+        duration_ms:
+          type: integer
+        processing_ms:
+          type: integer
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SttSegment'
+        ok:
+          type: boolean
+        error:
+          type: string
+    SttSegmentRequest:
+      type: object
+      required: [format, pcm_bytes]
+      properties:
+        format:
+          type: string
+          enum: [pcm_s16le_8k, pcm_s16le_16k, rtp_pcmu, rtp_pcma, rtp_g722, rtp_g729]
+        sample_rate:
+          type: integer
+        language:
+          type: string
+          example: pt
+        model:
+          $ref: '#/components/schemas/SttModelChoice'
+        pcm_bytes:
+          type: array
+          items:
+            type: integer
+    SegmentRequest:
+      type: object
+      required: [format, pcm_bytes]
+      properties:
+        format:
+          type: string
+          enum: [pcm_s16le_8k, pcm_s16le_16k, rtp_pcmu, rtp_pcma, rtp_g722, rtp_g729]
+        sample_rate:
+          type: integer
+        pcm_bytes:
+          type: array
+          items:
+            type: integer
+    GrpcBatchRequest:
+      type: object
+      properties:
+        format:
+          type: integer
+          description: AudioFormat enum (1=8k, 2=16k, 3=PCMU, 4=PCMA, 5=G722, 6=G729)
+        sample_rate:
+          type: integer
+        pcm_bytes:
+          type: array
+          items:
+            type: integer
+    GrpcStreamRequest:
+      type: object
+      required: [frames]
+      properties:
+        session_id:
+          type: string
+        format:
+          type: integer
+        frames:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp_ms:
+                type: integer
+              pcm_bytes:
+                type: array
+                items:
+                  type: integer
+    BatchResult:
+      type: object
+      properties:
+        composite_score:
+          type: number
+        stt_ready:
+          type: boolean
+        windows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WindowMetrics'
+        stt_ready_segments:
+          type: array
+          items:
+            type: object
+            properties:
+              start_ms:
+                type: integer
+              end_ms:
+                type: integer
+    WindowMetrics:
+      type: object
+      properties:
+        window_start_ms:
+          type: integer
+        rms_dbfs:
+          type: number
+        peak_dbfs:
+          type: number
+        clipping_ratio:
+          type: number
+        snr_estimate_db:
+          type: number
+        silence_ratio:
+          type: number
+        spectral_flatness:
+          type: number
+        packet_loss_pct:
+          type: number
+        jitter_ms:
+          type: number
+        composite_score:
+          type: number
+        stt_ready:
+          type: boolean

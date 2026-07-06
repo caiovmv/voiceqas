@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package voiceqas.v1;
+
+option cc_enable_arenas = true;
+
+service VoiceQualityService {
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+  rpc AnalyzeStream(stream AudioFrame) returns (stream QualityReport);
+  rpc AnalyzeBatch(BatchRequest) returns (BatchResponse);
+}
+
+enum AudioFormat {
+  AUDIO_FORMAT_UNSPECIFIED = 0;
+  PCM_S16LE_8K = 1;
+  PCM_S16LE_16K = 2;
+  RTP_PCMU = 3;
+  RTP_PCMA = 4;
+  RTP_G722 = 5;
+  RTP_G729 = 6;
+}
+
+message ReadyRequest {}
+
+message ReadyResponse {
+  string status = 1;
+  string service = 2;
+}
+
+message AudioFrame {
+  string session_id = 1;
+  bytes payload = 2;
+  AudioFormat format = 3;
+  int64 timestamp_ms = 4;
+}
+
+message Metrics {
+  double rms_dbfs = 1;
+  double peak_dbfs = 2;
+  double clipping_ratio = 3;
+  double snr_estimate_db = 4;
+  double silence_ratio = 5;
+  double spectral_flatness = 6;
+  double packet_loss_pct = 7;
+  double jitter_ms = 8;
+}
+
+message QualityReport {
+  string session_id = 1;
+  int64 window_start_ms = 2;
+  double composite_score = 3;
+  bool stt_ready = 4;
+  Metrics metrics = 5;
+}
+
+message BatchRequest {
+  bytes payload = 1;
+  AudioFormat format = 2;
+  int32 sample_rate = 3;
+}
+
+message SttReadySegment {
+  int64 start_ms = 1;
+  int64 end_ms = 2;
+}
+
+message BatchResponse {
+  double composite_score = 1;
+  bool stt_ready = 2;
+  repeated QualityReport windows = 3;
+  repeated SttReadySegment stt_ready_segments = 4;
+}

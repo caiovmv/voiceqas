@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>voiceqas — Console</title>
+  <link rel="stylesheet" href="/ui/assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <header>
+      <h1>voiceqas</h1>
+      <p>Avaliação de qualidade de voz para tronco SIP e gate STT</p>
+    </header>
+
+    <nav class="nav">
+      <a class="active" href="/ui/">Console</a>
+      <a href="/docs/swagger">Swagger UI</a>
+      <a href="/docs/redoc">ReDoc</a>
+      <a href="/ui/ws.html">WebSocket</a>
+      <a href="/ui/grpc.html">gRPC Playground</a>
+      <a href="/openapi/voiceqas.yaml">OpenAPI YAML</a>
+    </nav>
+
+    <div class="grid">
+      <div class="card">
+        <h2>REST API</h2>
+        <p>Upload WAV/PCM, análise batch e health checks.</p>
+        <a class="btn primary" href="/docs/swagger">Abrir Swagger</a>
+      </div>
+      <div class="card">
+        <h2>Documentação</h2>
+        <p>Especificação OpenAPI renderizada com ReDoc.</p>
+        <a class="btn" href="/docs/redoc">Abrir ReDoc</a>
+      </div>
+      <div class="card">
+        <h2>WebSocket</h2>
+        <p>Streaming em tempo real com handshake JSON + frames binários.</p>
+        <a class="btn" href="/ui/ws.html">Testar WS</a>
+      </div>
+      <div class="card">
+        <h2>gRPC</h2>
+        <p>Playground HTTP espelhando VoiceQualityService (produção na porta 50051).</p>
+        <a class="btn" href="/ui/grpc.html">Testar gRPC</a>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <h2>Status</h2>
+      <div id="status" class="log">Carregando...</div>
+    </div>
+  </div>
+  <script src="/ui/assets/common.js"></script>
+  <script>
+    (async () => {
+      const el = VoiceQasUI.$('status');
+      try {
+        const health = await VoiceQasUI.fetchJson('/health');
+        const ready = await VoiceQasUI.fetchJson('/ready');
+        VoiceQasUI.log(el, `health: ${JSON.stringify(health)}`, true);
+        VoiceQasUI.log(el, `ready: ${JSON.stringify(ready)}`);
+        VoiceQasUI.log(el, `API: ${VoiceQasUI.apiBase}`);
+        VoiceQasUI.log(el, `WS:  ${VoiceQasUI.wsBase}/v1/stream`);
+      } catch (e) {
+        VoiceQasUI.log(el, `erro: ${e.message}`, true);
+      }
+    })();
+  </script>
+</body>
+</html>

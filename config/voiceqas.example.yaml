@@ -1,0 +1,23 @@
+server:
+  rest_addr: "0.0.0.0:8080"
+  grpc_addr: "0.0.0.0:50051"
+  ws_addr: "0.0.0.0:8081"
+  web_root: "/app/web"
+  openapi_path: "/app/openapi/voiceqas.yaml"
+analyzer:
+  frame_ms: 20
+  window_ms: 500
+  stt_ready_threshold: 65
+  min_snr_db: 12
+  max_clipping_ratio: 0.02
+  max_silence_ratio: 0.60
+stt:
+  enabled: true
+  language: "pt"
+  target_sample_rate: 16000
+  default_model: "auto"
+  num_threads: 2
+  models_dir: "/models/stt"
+  parakeet_dir: "/models/stt/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+  whisper_dir: "/models/stt/sherpa-onnx-whisper-turbo"
+  whisper_callcenter_dir: ""

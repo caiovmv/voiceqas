@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package voiceqas.v1;
+
+import "voice_quality.proto";
+
+option cc_enable_arenas = true;
+
+service SpeechToTextService {
+  rpc Ready(SttReadyRequest) returns (SttReadyResponse);
+  rpc Transcribe(SttTranscribeRequest) returns (SttTranscribeResponse);
+  rpc TranscribeStream(stream SttAudioChunk) returns (stream SttTranscriptEvent);
+}
+
+message SttReadyRequest {}
+
+message SttReadyResponse {
+  string status = 1;
+  string service = 2;
+  string model = 3;
+  string language = 4;
+}
+
+message SttTranscribeRequest {
+  bytes payload = 1;
+  AudioFormat format = 2;
+  int32 sample_rate = 3;
+  string language = 4;
+  string model = 5;
+}
+
+message SttSegment {
+  int64 start_ms = 1;
+  int64 end_ms = 2;
+  string text = 3;
+}
+
+message SttTranscribeResponse {
+  string text = 1;
+  string model = 2;
+  string language = 3;
+  int64 duration_ms = 4;
+  int64 processing_ms = 5;
+  repeated SttSegment segments = 6;
+  string error = 7;
+}
+
+message SttAudioChunk {
+  string session_id = 1;
+  bytes payload = 2;
+  AudioFormat format = 3;
+  int32 sample_rate = 4;
+  bool flush = 5;
+  string model = 6;
+}
+
+enum SttEventType {
+  STT_EVENT_UNSPECIFIED = 0;
+  STT_PARTIAL = 1;
+  STT_FINAL = 2;
+  STT_ERROR = 3;
+}
+
+message SttTranscriptEvent {
+  string session_id = 1;
+  SttEventType type = 2;
+  string text = 3;
+  string model = 4;
+  int64 duration_ms = 5;
+  int64 processing_ms = 6;
+  repeated SttSegment segments = 7;
+  string error = 8;
+}

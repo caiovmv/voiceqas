@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>voiceqas — gRPC Playground</title>
+  <link rel="stylesheet" href="/ui/assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <header>
+      <h1>gRPC Playground</h1>
+      <p>Interface web espelhando <code>VoiceQualityService</code>. Produção: porta <strong>50051</strong> (gRPC nativo).</p>
+    </header>
+    <nav class="nav">
+      <a href="/ui/">Console</a>
+      <a href="/docs/swagger">Swagger</a>
+      <a href="/ui/ws.html">WebSocket</a>
+      <a class="active" href="/ui/grpc.html">gRPC</a>
+    </nav>
+
+    <div class="panel">
+      <h2>Ready</h2>
+      <p style="color:var(--muted);margin-top:0">RPC: <code>VoiceQualityService.Ready</code></p>
+      <button class="btn primary" id="btn-ready">Chamar Ready</button>
+      <pre id="ready-out" class="log" style="margin-top:12px;min-height:60px"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>AnalyzeBatch</h2>
+      <p style="color:var(--muted);margin-top:0">RPC: <code>VoiceQualityService.AnalyzeBatch</code></p>
+      <div class="row">
+        <div>
+          <label>Formato (enum)</label>
+          <select id="batch-format">
+            <option value="1">PCM_S16LE_8K (1)</option>
+            <option value="2">PCM_S16LE_16K (2)</option>
+            <option value="3">RTP_PCMU (3)</option>
+            <option value="4">RTP_PCMA (4)</option>
+          </select>
+        </div>
+        <div>
+          <label>Sample rate</label>
+          <input id="batch-rate" type="number" value="8000" />
+        </div>
+      </div>
+      <button class="btn" id="btn-batch-tone">Analisar tom 440Hz (2s)</button>
+      <button class="btn" id="btn-batch-silence">Analisar silêncio (2s)</button>
+      <pre id="batch-out" class="log" style="margin-top:12px"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>AnalyzeStream</h2>
+      <p style="color:var(--muted);margin-top:0">
+        RPC bidi: <code>AnalyzeStream</code>. Playground via SSE
+        (<code>POST /v1/playground/grpc/analyze-stream</code>).
+        Para streaming nativo use <a href="/ui/ws.html">WebSocket</a>.
+      </p>
+      <div class="row">
+        <div>
+          <label>Session ID</label>
+          <input id="stream-session" value="grpc-demo" />
+        </div>
+        <div>
+          <label>Frames (tom 300Hz x 25)</label>
+          <input id="stream-frames" type="number" value="25" min="1" max="100" />
+        </div>
+      </div>
+      <button class="btn primary" id="btn-stream">Executar stream (SSE)</button>
+      <pre id="stream-out" class="log" style="margin-top:12px"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>Proto (referência)</h2>
+      <pre class="log" style="max-height:200px">service VoiceQualityService {
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+  rpc AnalyzeStream(stream AudioFrame) returns (stream QualityReport);
+  rpc AnalyzeBatch(BatchRequest) returns (BatchResponse);
+}</pre>
+      <p style="color:var(--muted)">grpcurl: <code>grpcurl -plaintext localhost:50051 voiceqas.v1.VoiceQualityService/Ready</code></p>
+    </div>
+  </div>
+
+  <script src="/ui/assets/common.js"></script>
+  <script>
+    const readyOut = VoiceQasUI.$('ready-out');
+    const batchOut = VoiceQasUI.$('batch-out');
+    const streamOut = VoiceQasUI.$('stream-out');
+
+    VoiceQasUI.$('btn-ready').onclick = async () => {
+      try {
+        const data = await VoiceQasUI.fetchJson('/v1/playground/grpc/ready', { method: 'POST' });
+        readyOut.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        readyOut.textContent = e.message;
+      }
+    };
+
+    async function runBatch(kind) {
+      const rate = Number(VoiceQasUI.$('batch-rate').value) || 8000;
+      const format = Number(VoiceQasUI.$('batch-format').value);
+      let pcm;
+      if (kind === 'tone') {
+        pcm = VoiceQasUI.pcmFromSine(440, rate, 2.0);
+      } else {
+        pcm = new Uint8Array(rate * 2 * 2);
+      }
+      const body = {
+        format,
+        sample_rate: rate,
+        pcm_bytes: VoiceQasUI.int16BytesToArray(pcm),
+      };
+      try {
+        const data = await VoiceQasUI.fetchJson('/v1/playground/grpc/analyze-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        batchOut.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        batchOut.textContent = e.message;
+      }
+    }
+
+    VoiceQasUI.$('btn-batch-tone').onclick = () => runBatch('tone');
+    VoiceQasUI.$('btn-batch-silence').onclick = () => runBatch('silence');
+
+    VoiceQasUI.$('btn-stream').onclick = async () => {
+      const rate = 8000;
+      const n = Number(VoiceQasUI.$('stream-frames').value) || 25;
+      const frames = [];
+      for (let i = 0; i < n; i++) {
+        const pcm = VoiceQasUI.pcmFromSine(300, rate, 0.02);
+        frames.push({
+          timestamp_ms: i * 20,
+          pcm_bytes: VoiceQasUI.int16BytesToArray(pcm),
+        });
+      }
+      const body = {
+        session_id: VoiceQasUI.$('stream-session').value,
+        format: 1,
+        frames,
+      };
+      streamOut.textContent = '';
+      try {
+        const res = await fetch(`${VoiceQasUI.apiBase}/v1/playground/grpc/analyze-stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        streamOut.textContent = text;
+      } catch (e) {
+        streamOut.textContent = e.message;
+      }
+    };
+  </script>
+</body>
+</html>

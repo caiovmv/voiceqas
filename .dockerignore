@@ -1,0 +1,12 @@
+build/
+cmake-build-*/
+.git/
+.gitignore
+*.md
+docs/
+vcpkg_installed/
+.vcpkg/
+.ccache/
+compile_commands.json
+voiceqas-server
+voiceqas_tests

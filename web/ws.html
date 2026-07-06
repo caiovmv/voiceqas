@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>voiceqas — WebSocket Tester</title>
+  <link rel="stylesheet" href="/ui/assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <header>
+      <h1>WebSocket Stream</h1>
+      <p>Endpoint: <code id="ws-url"></code></p>
+    </header>
+    <nav class="nav">
+      <a href="/ui/">Console</a>
+      <a href="/docs/swagger">Swagger</a>
+      <a class="active" href="/ui/ws.html">WebSocket</a>
+      <a href="/ui/grpc.html">gRPC</a>
+    </nav>
+
+    <div class="panel">
+      <div class="row">
+        <div>
+          <label>Session ID</label>
+          <input id="session-id" value="ws-demo" />
+        </div>
+        <div>
+          <label>Formato</label>
+          <select id="format">
+            <option value="pcm_s16le_8k">pcm_s16le_8k</option>
+            <option value="pcm_s16le_16k">pcm_s16le_16k</option>
+            <option value="rtp_pcmu">rtp_pcmu</option>
+            <option value="rtp_pcma">rtp_pcma</option>
+            <option value="rtp_g722">rtp_g722</option>
+            <option value="rtp_g729">rtp_g729</option>
+          </select>
+        </div>
+        <div>
+          <label>Sample rate</label>
+          <input id="sample-rate" type="number" value="8000" />
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btn-connect">Conectar</button>
+        <button class="btn" id="btn-disconnect" disabled>Desconectar</button>
+        <button class="btn" id="btn-tone" disabled>Enviar tom 300Hz (500ms)</button>
+        <button class="btn" id="btn-silence" disabled>Enviar silêncio (500ms)</button>
+        <span id="conn-badge" class="badge idle">desconectado</span>
+      </div>
+      <div>
+        <label>Score</label>
+        <div class="meter"><span id="score-bar" style="width:0%"></span></div>
+        <p>STT-ready: <span id="stt-ready" class="badge idle">—</span> | composite: <strong id="score-val">0</strong></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Log</h2>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+  <script src="/ui/assets/common.js"></script>
+  <script>
+    const logEl = VoiceQasUI.$('log');
+    const wsUrl = `${VoiceQasUI.wsBase}/v1/stream`;
+    VoiceQasUI.$('ws-url').textContent = wsUrl;
+
+    let ws = null;
+    let ts = 0;
+
+    function setConnected(ok) {
+      VoiceQasUI.$('btn-connect').disabled = ok;
+      VoiceQasUI.$('btn-disconnect').disabled = !ok;
+      VoiceQasUI.$('btn-tone').disabled = !ok;
+      VoiceQasUI.$('btn-silence').disabled = !ok;
+      const b = VoiceQasUI.$('conn-badge');
+      b.textContent = ok ? 'conectado' : 'desconectado';
+      b.className = 'badge ' + (ok ? 'ok' : 'idle');
+    }
+
+    function updateReport(data) {
+      const score = data.composite_score ?? 0;
+      VoiceQasUI.$('score-val').textContent = score.toFixed(1);
+      VoiceQasUI.$('score-bar').style.width = `${Math.min(100, score)}%`;
+      const stt = VoiceQasUI.$('stt-ready');
+      stt.textContent = data.stt_ready ? 'SIM' : 'NÃO';
+      stt.className = 'badge ' + (data.stt_ready ? 'ok' : 'bad');
+    }
+
+    VoiceQasUI.$('btn-connect').onclick = () => {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        const handshake = {
+          session_id: VoiceQasUI.$('session-id').value,
+          format: VoiceQasUI.$('format').value,
+          sample_rate: Number(VoiceQasUI.$('sample-rate').value),
+          timestamp_ms: 0,
+        };
+        ws.send(JSON.stringify(handshake));
+        setConnected(true);
+        ts = 0;
+        VoiceQasUI.log(logEl, 'conectado, handshake enviado');
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.status === 'ok') {
+            VoiceQasUI.log(logEl, 'handshake OK');
+            return;
+          }
+          updateReport(data);
+          VoiceQasUI.log(logEl, `report: score=${data.composite_score?.toFixed?.(1)} stt=${data.stt_ready}`);
+        } catch {
+          VoiceQasUI.log(logEl, ev.data);
+        }
+      };
+      ws.onerror = () => VoiceQasUI.log(logEl, 'erro websocket');
+      ws.onclose = () => { setConnected(false); VoiceQasUI.log(logEl, 'desconectado'); };
+    };
+
+    VoiceQasUI.$('btn-disconnect').onclick = () => { if (ws) ws.close(); };
+
+    function sendPcm(bytes) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(bytes);
+      ts += 20;
+    }
+
+    VoiceQasUI.$('btn-tone').onclick = () => {
+      const rate = Number(VoiceQasUI.$('sample-rate').value) || 8000;
+      sendPcm(VoiceQasUI.pcmFromSine(300, rate, 0.5));
+    };
+
+    VoiceQasUI.$('btn-silence').onclick = () => {
+      const rate = Number(VoiceQasUI.$('sample-rate').value) || 8000;
+      const n = Math.floor(rate * 0.5) * 2;
+      sendPcm(new Uint8Array(n));
+    };
+  </script>
+</body>
+</html>

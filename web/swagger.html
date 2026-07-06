@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>voiceqas — Swagger UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
+  <link rel="stylesheet" href="/ui/assets/style.css" />
+  <style>
+    body { background: #fff; color: #111; }
+    .topbar { background: var(--panel); padding: 12px 24px; border-bottom: 1px solid var(--border); }
+    .topbar a { color: var(--accent); margin-right: 16px; }
+    #swagger-ui { padding: 0 16px 32px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/ui/">← Console</a>
+    <a href="/docs/redoc">ReDoc</a>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/openapi/voiceqas.yaml',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+    });
+  </script>
+</body>
+</html>

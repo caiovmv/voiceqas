@@ -1,0 +1,14 @@
+.build/
+build/
+cmake-build-*/
+.vcpkg/
+vcpkg_installed/
+.ccache/
+compile_commands.json
+*.o
+*.a
+voiceqas-server
+voiceqas_tests
+models/
+tester-web/node_modules/
+tester-web/dist/

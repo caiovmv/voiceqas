@@ -1,0 +1,2 @@
+LGPL-2.1 — SpanDSP G.722 subset (Steve Underwood / freeswitch/spandsp)
+Vendored files under third_party/spandsp/src for wideband RTP decode/encode.

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "voiceqas",
+  "version": "0.1.0",
+  "description": "Voice quality assessment for SIP telephony and STT gating",
+  "dependencies": [
+    "grpc",
+    "protobuf",
+    "boost-beast",
+    "cpp-httplib",
+    "nlohmann-json",
+    "yaml-cpp",
+    "bcg729"
+  ],
+  "features": {
+    "test": {
+      "description": "GoogleTest para unit tests",
+      "dependencies": ["gtest"]
+    }
+  },
+  "overrides": [
+    { "name": "nlohmann-json", "version": "3.12.0" },
+    { "name": "cpp-httplib", "version": "0.48.0" },
+    { "name": "yaml-cpp", "version": "0.9.0" },
+    { "name": "gtest", "version": "1.17.0" }
+  ]
+}
