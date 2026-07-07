@@ -111,10 +111,13 @@ RUN --mount=type=cache,target=/opt/vcpkg/downloads,id=voiceqas-vcpkg-dl \
     --mount=type=cache,target=/opt/vcpkg/packages,id=voiceqas-vcpkg-pkg \
     --mount=type=cache,target=/opt/vcpkg/bincache,id=voiceqas-vcpkg-bin \
     --mount=type=cache,target=/src/vcpkg_installed,id=voiceqas-vcpkg-installed \
-    "${VCPKG_ROOT}/vcpkg" install \
+    bash -c 'VCPKG_FEATURE_ARGS=(); \
+      if [[ "${VOICEQAS_BUILD_TESTS}" == "ON" ]]; then VCPKG_FEATURE_ARGS+=(--x-feature=test); fi; \
+      "${VCPKG_ROOT}/vcpkg" install \
         --triplet "${VCPKG_DEFAULT_TRIPLET}" \
         --x-manifest-root=/src \
-        --x-install-root=/src/vcpkg_installed
+        --x-install-root=/src/vcpkg_installed \
+        "${VCPKG_FEATURE_ARGS[@]}"'
 
 # --- Layer B: scaffolding CMake (muda raramente) ---
 COPY CMakeLists.txt ./
@@ -134,14 +137,8 @@ RUN --mount=type=cache,target=/opt/vcpkg/downloads,id=voiceqas-vcpkg-dl \
     --mount=type=cache,target=/src/vcpkg_installed,id=voiceqas-vcpkg-installed \
     --mount=type=cache,target=/src/build/_deps,id=voiceqas-fetchcontent-shared-ort \
     --mount=type=cache,target=/root/.ccache,id=voiceqas-ccache \
-    bash -c 'if [[ "${VOICEQAS_BUILD_TESTS}" == "ON" ]]; then \
-      "${VCPKG_ROOT}/vcpkg" install \
-        --triplet "${VCPKG_DEFAULT_TRIPLET}" \
-        --x-manifest-root=/src \
-        --x-install-root=/src/vcpkg_installed \
-        --x-feature=test; \
-    fi && \
-    cmake -B build -G Ninja \
+    bash -c 'cmake -B build -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
         -DCMAKE_BUILD_TYPE=Release \
         -DVOICEQAS_BUILD_TESTS="${VOICEQAS_BUILD_TESTS}" \
         -DVOICEQAS_ENABLE_STT=ON \
@@ -234,9 +231,11 @@ WORKDIR /app
 COPY --from=builder /runtime/bin/voiceqas-server /usr/local/bin/voiceqas-server
 COPY --from=builder /runtime/lib/ /usr/local/lib/
 RUN --mount=type=bind,from=cuda-libs,source=/usr/local/cuda/lib64,target=/cuda-libs,readonly \
+    --mount=type=bind,from=cuda-libs,source=/usr/lib/x86_64-linux-gnu,target=/cuda-gnu,readonly \
     if [[ "${VOICEQAS_STT_CUDA}" == "1" ]]; then \
       mkdir -p /usr/local/cuda/lib64 && \
-      cp -a /cuda-libs/. /usr/local/cuda/lib64/; \
+      cp -a /cuda-libs/. /usr/local/cuda/lib64/ && \
+      cp -a /cuda-gnu/libcudnn*.so* /usr/local/cuda/lib64/; \
     fi
 COPY --from=builder /runtime/share/dependency-versions.txt /app/dependency-versions.txt
 COPY config/voiceqas.example.yaml /etc/voiceqas/voiceqas.yaml
