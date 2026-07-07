@@ -9,7 +9,5 @@ if [[ ! -d "$BUILD_DIR" ]]; then
 fi
 
 cd "$BUILD_DIR"
-echo ">> Running voiceqas_tests (core)..."
-ctest --output-on-failure -L "unit;core" "$@"
-echo ">> Running voiceqas_server_tests (server)..."
-ctest --output-on-failure -L "unit;server" "$@"
+echo ">> Running all unit tests..."
+ctest --output-on-failure --tests-regex 'voiceqas_(server_)?tests' "$@"
