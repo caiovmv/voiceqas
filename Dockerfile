@@ -137,13 +137,16 @@ RUN --mount=type=cache,target=/opt/vcpkg/downloads,id=voiceqas-vcpkg-dl \
     --mount=type=cache,target=/src/vcpkg_installed,id=voiceqas-vcpkg-installed \
     --mount=type=cache,target=/src/build/_deps,id=voiceqas-fetchcontent-shared-ort \
     --mount=type=cache,target=/root/.ccache,id=voiceqas-ccache \
-    bash -c 'cmake -B build -G Ninja \
+    bash -c 'CMAKE_EXTRA=(); \
+      if [[ "${VOICEQAS_BUILD_TESTS}" == "ON" ]]; then CMAKE_EXTRA+=(-DVCPKG_MANIFEST_FEATURES=test); fi; \
+      cmake -B build -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
         -DCMAKE_BUILD_TYPE=Release \
         -DVOICEQAS_BUILD_TESTS="${VOICEQAS_BUILD_TESTS}" \
         -DVOICEQAS_ENABLE_STT=ON \
         -DVOICEQAS_STT_CUDA=${VOICEQAS_STT_CUDA} \
         -DVCPKG_INSTALLED_DIR=/src/vcpkg_installed \
+        "${CMAKE_EXTRA[@]}" \
     && cmake --build build -j"$(nproc)" \
     && if [[ "${VOICEQAS_BUILD_TESTS}" == "ON" ]]; then cd build && ctest --output-on-failure; fi'
 
