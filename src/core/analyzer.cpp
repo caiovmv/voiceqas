@@ -255,7 +255,7 @@ BatchResult VoiceAnalyzer::analyze_pcm_batch(std::span<const int16_t> samples, i
     return result;
 }
 
-VqaSessionManager::SessionManager(
+VqaSessionManager::VqaSessionManager(
     AnalyzerConfig default_config,
     audio::AudioProcessingConfig audio_config,
     std::shared_ptr<ports::IMetricsPublisher> metrics,
@@ -265,8 +265,8 @@ VqaSessionManager::SessionManager(
       metrics_(std::move(metrics)),
       telemetry_(std::move(telemetry)) {}
 
-VqaSessionManager::SessionManager(AnalyzerConfig default_config, audio::AudioProcessingConfig audio_config)
-    : SessionManager(
+VqaSessionManager::VqaSessionManager(AnalyzerConfig default_config, audio::AudioProcessingConfig audio_config)
+    : VqaSessionManager(
           std::move(default_config),
           std::move(audio_config),
           ports::noop_metrics_publisher(),
