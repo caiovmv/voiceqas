@@ -61,5 +61,6 @@ struct BatchResult {
 int sample_rate_for_format(AudioFormat format);
 int rtp_clock_rate_for_format(AudioFormat format);
 AudioFormat audio_format_from_string(const std::string& s);
+std::string audio_format_to_string(AudioFormat format);
 
 }  // namespace voiceqas

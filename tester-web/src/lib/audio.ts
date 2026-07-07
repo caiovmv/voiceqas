@@ -1,6 +1,7 @@
 import type { AudioFormat, CodecConfig } from './types';
 import { COMPARE_PRESETS } from './types';
 import { decodeRtpViaBackend, needsBackendCodec, packRtpViaBackend } from './codec-client';
+import { decodeG722, encodeG722 } from './g722';
 import { decodePcma, decodePcmu, encodePcma, encodePcmu } from './g711';
 import { buildRtpPacket, extractRtpPayload } from './rtp';
 
@@ -87,15 +88,108 @@ export function int16ToBytes(samples: Int16Array): Uint8Array {
   return bytes;
 }
 
+export function prepareAudioForStt(
+  pcm: Int16Array,
+  pcmRate: number,
+  config: CodecConfig,
+): Int16Array {
+  let samples = preparePcmForConfig(pcm, pcmRate, config);
+  if (config.simulateClipping) {
+    samples = applyClipping(samples, config.clippingGain);
+  }
+  return samples;
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function blobToBytes(blob: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** PCM após encode/decode do codec escolhido (round-trip SIP). */
+export async function buildCodecRoundTripPcm(
+  pcm: Int16Array,
+  pcmRate: number,
+  config: CodecConfig,
+): Promise<{ pcm: Int16Array; sampleRate: number }> {
+  const encoded = await encodeForTransport(pcm, pcmRate, config);
+  const decoded = await decodeFromEncoded(encoded);
+  return { pcm: decoded, sampleRate: encoded.sampleRate };
+}
+
+/** PCM 16 kHz enviado ao pipeline STT (decode + resample). */
+export async function buildSttEnhancedPcm(
+  pcm: Int16Array,
+  pcmRate: number,
+  config: CodecConfig,
+  sttTargetRate = 16000,
+): Promise<Int16Array> {
+  const { pcm: roundTrip, sampleRate } = await buildCodecRoundTripPcm(pcm, pcmRate, config);
+  if (sampleRate === sttTargetRate) {
+    return roundTrip;
+  }
+  return resampleInt16(roundTrip, sampleRate, sttTargetRate);
+}
+
+export interface ComparisonPackFile {
+  name: string;
+  blob: Blob;
+}
+
+export async function buildComparisonPack(
+  pcm: Int16Array,
+  pcmRate: number,
+  config: CodecConfig,
+): Promise<ComparisonPackFile[]> {
+  const qualityId =
+    config.format === 'rtp_g722'
+      ? 'g722'
+      : config.format === 'rtp_pcmu'
+        ? 'g711'
+        : 'pcm16';
+  const [roundTrip, sttPcm] = await Promise.all([
+    buildCodecRoundTripPcm(pcm, pcmRate, config),
+    buildSttEnhancedPcm(pcm, pcmRate, config),
+  ]);
+  return [
+    { name: '01-original.wav', blob: createWavBlob(pcm, pcmRate) },
+    {
+      name: `02-codec-${qualityId}-roundtrip.wav`,
+      blob: createWavBlob(roundTrip.pcm, roundTrip.sampleRate),
+    },
+    { name: '03-stt-enhanced-16khz.wav', blob: createWavBlob(sttPcm, 16000) },
+  ];
+}
+
+export async function downloadComparisonPackZip(
+  pcm: Int16Array,
+  pcmRate: number,
+  config: CodecConfig,
+) {
+  const { zipSync } = await import('fflate');
+  const files = await buildComparisonPack(pcm, pcmRate, config);
+  const zipEntries: Record<string, Uint8Array> = {};
+  for (const file of files) {
+    zipEntries[file.name] = await blobToBytes(file.blob);
+  }
+  const zipped = zipSync(zipEntries);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  downloadBlob(new Blob([zipped], { type: 'application/zip' }), `voiceqas-audio-pack-${stamp}.zip`);
+}
+
 export async function encodeForTransport(
   pcm: Int16Array,
   pcmRate: number,
   config: CodecConfig,
 ): Promise<EncodedPayload> {
-  let samples = preparePcmForConfig(pcm, pcmRate, config);
-  if (config.simulateClipping) {
-    samples = applyClipping(samples, config.clippingGain);
-  }
+  const samples = prepareAudioForStt(pcm, pcmRate, config);
 
   const frameSamples = Math.floor(config.sampleRate * (config.frameMs / 1000));
   const frames: Uint8Array[] = [];
@@ -104,6 +198,26 @@ export async function encodeForTransport(
     for (let i = 0; i < samples.length; i += frameSamples) {
       const chunk = samples.subarray(i, i + frameSamples);
       frames.push(int16ToBytes(chunk));
+    }
+    return { frames, format: config.format, sampleRate: config.sampleRate, frameMs: config.frameMs };
+  }
+
+  if (config.format === 'rtp_g722') {
+    let g722Input = samples;
+    if (g722Input.length % 2 !== 0) {
+      const padded = new Int16Array(g722Input.length + 1);
+      padded.set(g722Input);
+      g722Input = padded;
+    }
+    const g722 = encodeG722(g722Input);
+    const frameSamples = Math.floor(config.sampleRate * (config.frameMs / 1000));
+    const bytesPerFrame = frameSamples / 2;
+    let seq = 1;
+    let ts = 0;
+    for (let i = 0; i < g722.length; i += bytesPerFrame) {
+      const payload = g722.subarray(i, i + bytesPerFrame);
+      frames.push(buildRtpPacket(seq++, ts, payload, 9));
+      ts += payload.length;
     }
     return { frames, format: config.format, sampleRate: config.sampleRate, frameMs: config.frameMs };
   }
@@ -184,6 +298,18 @@ export async function decodeFromEncoded(encoded: EncodedPayload): Promise<Int16A
     return bytesToInt16(out);
   }
 
+  if (encoded.format === 'rtp_g722') {
+    const total = encoded.frames.reduce((n, f) => n + extractRtpPayload(f).length, 0);
+    const g722 = new Uint8Array(total);
+    let off = 0;
+    for (const frame of encoded.frames) {
+      const payload = extractRtpPayload(frame);
+      g722.set(payload, off);
+      off += payload.length;
+    }
+    return decodeG722(g722);
+  }
+
   if (needsBackendCodec(encoded.format)) {
     return decodeRtpViaBackend(encoded.format, encoded.frames);
   }
@@ -223,6 +349,7 @@ export async function buildVariants(
       ...preset.config,
       sessionId: `${sessionBase}-${preset.id}`,
       sttModel: 'auto',
+      sttProvider: 'cpu',
     };
     const encoded = await encodeForTransport(pcm, pcmRate, config);
     variants.push({

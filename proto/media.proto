@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package voiceqas.v1;
+
+import "voice_quality.proto";
+
+option cc_enable_arenas = true;
+
+service MediaRelayService {
+  rpc OpenSession(OpenMediaSessionRequest) returns (OpenMediaSessionResponse);
+  rpc CloseSession(CloseMediaSessionRequest) returns (CloseMediaSessionResponse);
+  rpc ListSessions(ListMediaSessionsRequest) returns (ListMediaSessionsResponse);
+  rpc SendAgentAudio(SendAgentAudioRequest) returns (SendAgentAudioResponse);
+}
+
+message MediaSessionInfo {
+  string session_id = 1;
+  AudioFormat format = 2;
+  int32 sample_rate = 3;
+  string remote_host = 4;
+  int32 remote_port = 5;
+  string inbound_host = 6;
+  int32 inbound_port = 7;
+}
+
+message OpenMediaSessionRequest {
+  MediaSessionInfo session = 1;
+}
+
+message OpenMediaSessionResponse {
+  string status = 1;
+  string session_id = 2;
+  int32 sample_rate = 3;
+  string error = 4;
+}
+
+message CloseMediaSessionRequest {
+  string session_id = 1;
+}
+
+message CloseMediaSessionResponse {
+  string status = 1;
+  string error = 2;
+}
+
+message ListMediaSessionsRequest {}
+
+message ListMediaSessionsResponse {
+  repeated MediaSessionInfo sessions = 1;
+}
+
+message SendAgentAudioRequest {
+  string session_id = 1;
+  bytes pcm_payload = 2;
+  int32 sample_rate = 3;
+}
+
+message SendAgentAudioResponse {
+  string status = 1;
+  int32 rtp_packets = 2;
+  int32 bytes_sent = 3;
+  string error = 4;
+}

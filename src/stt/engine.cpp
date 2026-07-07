@@ -6,8 +6,13 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <unordered_map>
 
 #include "sherpa-onnx/c-api/c-api.h"
+
+#include "voiceqas/ports/pipeline_telemetry.hpp"
+#include "voiceqas/stt/provider.hpp"
+#include "voiceqas/stt/vad_model.hpp"
 
 namespace voiceqas::stt {
 
@@ -68,13 +73,15 @@ std::optional<ModelPaths> resolve_whisper_paths(const std::string& dir) {
     ModelPaths paths;
     paths.encoder = first_existing(
         dir,
-        {"turbo-encoder.onnx",
+        {"turbo-encoder.int8.onnx",
+         "turbo-encoder.onnx",
          "large-v3-turbo-encoder.onnx",
          "whisper-turbo-encoder.onnx",
          "encoder.onnx"});
     paths.decoder = first_existing(
         dir,
-        {"turbo-decoder.onnx",
+        {"turbo-decoder.int8.onnx",
+         "turbo-decoder.onnx",
          "large-v3-turbo-decoder.onnx",
          "whisper-turbo-decoder.onnx",
          "decoder.onnx"});
@@ -86,13 +93,13 @@ std::optional<ModelPaths> resolve_whisper_paths(const std::string& dir) {
     return paths;
 }
 
-SherpaOnnxOfflineRecognizerConfig make_base_config(int num_threads) {
+SherpaOnnxOfflineRecognizerConfig make_base_config(int num_threads, const std::string& provider) {
     SherpaOnnxOfflineRecognizerConfig config{};
     config.feat_config.sample_rate = 16000;
     config.feat_config.feature_dim = 80;
     config.model_config.num_threads = num_threads;
     config.model_config.debug = 0;
-    config.model_config.provider = "cpu";
+    config.model_config.provider = provider.c_str();
     config.decoding_method = "greedy_search";
     config.max_active_paths = 4;
     return config;
@@ -101,8 +108,9 @@ SherpaOnnxOfflineRecognizerConfig make_base_config(int num_threads) {
 const SherpaOnnxOfflineRecognizer* create_parakeet_recognizer(
     const ModelPaths& paths,
     int num_threads,
+    const std::string& provider,
     std::string& error) {
-    auto config = make_base_config(num_threads);
+    auto config = make_base_config(num_threads, provider);
     config.model_config.transducer.encoder = paths.encoder.c_str();
     config.model_config.transducer.decoder = paths.decoder.c_str();
     config.model_config.transducer.joiner = paths.joiner.c_str();
@@ -120,8 +128,9 @@ const SherpaOnnxOfflineRecognizer* create_whisper_recognizer(
     const ModelPaths& paths,
     int num_threads,
     const std::string& language,
+    const std::string& provider,
     std::string& error) {
-    auto config = make_base_config(num_threads);
+    auto config = make_base_config(num_threads, provider);
     config.model_config.whisper.encoder = paths.encoder.c_str();
     config.model_config.whisper.decoder = paths.decoder.c_str();
     config.model_config.whisper.language = language.c_str();
@@ -214,20 +223,48 @@ SttModelChoice parse_model_choice(const std::string& value, SttModelChoice fallb
     return fallback;
 }
 
-struct SttEngine::Impl {
+struct SttEngine::RecognizerBundle {
+    std::string provider;
     const SherpaOnnxOfflineRecognizer* parakeet = nullptr;
     const SherpaOnnxOfflineRecognizer* whisper = nullptr;
+
+    ~RecognizerBundle() {
+        if (parakeet) {
+            SherpaOnnxDestroyOfflineRecognizer(parakeet);
+        }
+        if (whisper) {
+            SherpaOnnxDestroyOfflineRecognizer(whisper);
+        }
+    }
+};
+
+struct SttEngine::Impl {
     ModelPaths parakeet_paths;
     ModelPaths whisper_paths;
+    bool parakeet_resolved = false;
+    bool whisper_resolved = false;
+    std::string parakeet_dir;
+    std::string whisper_dir;
+    mutable std::unordered_map<std::string, std::unique_ptr<RecognizerBundle>> bundles;
+    std::unique_ptr<SileroVad> vad;
+    std::string vad_model_id;
+    std::string vad_model_name;
     std::string load_error;
 };
 
-SttEngine::SttEngine(SttConfig config) : config_(std::move(config)), impl_(std::make_unique<Impl>()) {
+SttEngine::SttEngine(
+    SttConfig config,
+    std::shared_ptr<ports::IPipelineTelemetry> telemetry)
+    : config_(std::move(config)),
+      telemetry_(std::move(telemetry)),
+      impl_(std::make_unique<Impl>()) {
     if (!config_.enabled) {
         return;
     }
 
-    const auto parakeet_dir = config_.parakeet_dir.empty()
+    config_.provider = normalize_stt_provider(config_.provider);
+
+    impl_->parakeet_dir = config_.parakeet_dir.empty()
         ? join_path(config_.models_dir, "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8")
         : config_.parakeet_dir;
 
@@ -239,28 +276,22 @@ SttEngine::SttEngine(SttConfig config) : config_(std::move(config)), impl_(std::
             whisper_dir = join_path(config_.models_dir, "sherpa-onnx-whisper-turbo");
         }
     }
+    impl_->whisper_dir = whisper_dir;
 
-    if (const auto paths = resolve_parakeet_paths(parakeet_dir)) {
+    if (const auto paths = resolve_parakeet_paths(impl_->parakeet_dir)) {
         impl_->parakeet_paths = *paths;
-        impl_->parakeet = create_parakeet_recognizer(*paths, config_.num_threads, impl_->load_error);
-        if (impl_->parakeet) {
-            std::cerr << "voiceqas STT: parakeet loaded from " << parakeet_dir << '\n';
-        }
+        impl_->parakeet_resolved = true;
     } else {
-        impl_->load_error = "parakeet model directory not found: " + parakeet_dir;
+        impl_->load_error = "parakeet model directory not found: " + impl_->parakeet_dir;
         std::cerr << "voiceqas STT warning: " << impl_->load_error << '\n';
     }
 
-    if (const auto paths = resolve_whisper_paths(whisper_dir)) {
+    if (const auto paths = resolve_whisper_paths(impl_->whisper_dir)) {
         impl_->whisper_paths = *paths;
         if (!config_.whisper_callcenter_dir.empty() && whisper_dir == config_.whisper_callcenter_dir) {
             impl_->whisper_paths.label = "whisper-large-v3-turbo-ptbr-callcenter";
         }
-        impl_->whisper = create_whisper_recognizer(
-            impl_->whisper_paths, config_.num_threads, config_.language, impl_->load_error);
-        if (impl_->whisper) {
-            std::cerr << "voiceqas STT: whisper loaded from " << whisper_dir << '\n';
-        }
+        impl_->whisper_resolved = true;
     } else {
         const auto msg = "whisper model directory not found: " + whisper_dir;
         if (impl_->load_error.empty()) {
@@ -268,30 +299,140 @@ SttEngine::SttEngine(SttConfig config) : config_(std::move(config)), impl_(std::
         }
         std::cerr << "voiceqas STT warning: " << msg << '\n';
     }
+
+    load_provider_locked(config_.provider);
+
+    if (config_.vad.enabled) {
+        const auto resolved = resolve_vad_model(
+            config_.models_dir, config_.vad.model, config_.vad.model_path);
+        if (resolved.path.empty()) {
+            std::cerr << "voiceqas STT warning: no Silero VAD model found under "
+                      << config_.models_dir << " (selector=" << config_.vad.model << ")\n";
+        } else {
+            auto vad_cfg = config_.vad;
+            vad_cfg.model_path = resolved.path;
+            if (vad_cfg.provider.empty()) {
+                vad_cfg.provider = config_.provider;
+            } else {
+                vad_cfg.provider = normalize_stt_provider(vad_cfg.provider);
+            }
+            impl_->vad_model_id = resolved.id;
+            impl_->vad_model_name = resolved.name;
+            impl_->vad = std::make_unique<SileroVad>(vad_cfg);
+            if (impl_->vad->ready()) {
+                std::cerr << "voiceqas STT: silero VAD [" << resolved.id << "] loaded from "
+                          << resolved.path << " (provider=" << vad_cfg.provider << ")\n";
+            } else {
+                std::cerr << "voiceqas STT warning: silero VAD unavailable at " << resolved.path
+                          << '\n';
+                impl_->vad.reset();
+            }
+        }
+    }
 }
 
-SttEngine::~SttEngine() {
-    if (impl_->parakeet) {
-        SherpaOnnxDestroyOfflineRecognizer(impl_->parakeet);
+SttEngine::~SttEngine() = default;
+
+void SttEngine::load_provider_locked(const std::string& provider) const {
+    const auto normalized = normalize_stt_provider(provider);
+    if (impl_->bundles.contains(normalized)) {
+        return;
     }
-    if (impl_->whisper) {
-        SherpaOnnxDestroyOfflineRecognizer(impl_->whisper);
+
+    auto bundle = std::make_unique<RecognizerBundle>();
+    bundle->provider = normalized;
+
+    if (impl_->parakeet_resolved) {
+        std::string err;
+        bundle->parakeet = create_parakeet_recognizer(
+            impl_->parakeet_paths, config_.num_threads, normalized, err);
+        if (bundle->parakeet) {
+            std::cerr << "voiceqas STT: parakeet [" << normalized << "] loaded from "
+                      << impl_->parakeet_dir << '\n';
+        } else if (!err.empty()) {
+            std::cerr << "voiceqas STT warning: " << err << " (provider=" << normalized << ")\n";
+        }
     }
+
+    if (impl_->whisper_resolved) {
+        std::string err;
+        bundle->whisper = create_whisper_recognizer(
+            impl_->whisper_paths, config_.num_threads, config_.language, normalized, err);
+        if (bundle->whisper) {
+            std::cerr << "voiceqas STT: whisper [" << normalized << "] loaded from "
+                      << impl_->whisper_dir << '\n';
+        } else if (!err.empty()) {
+            std::cerr << "voiceqas STT warning: " << err << " (provider=" << normalized << ")\n";
+        }
+    }
+
+    impl_->bundles.emplace(normalized, std::move(bundle));
+}
+
+SttEngine::RecognizerBundle& SttEngine::ensure_provider_locked(const std::string& provider) const {
+    const auto normalized = normalize_stt_provider(provider);
+    load_provider_locked(normalized);
+    return *impl_->bundles.at(normalized);
 }
 
 SttReadyStatus SttEngine::ready_status() const {
+    std::lock_guard lock(mutex_);
     SttReadyStatus status;
-    status.parakeet_ready = impl_->parakeet != nullptr;
-    status.whisper_ready = impl_->whisper != nullptr;
+    status.provider = normalize_stt_provider(config_.provider);
+    status.cuda_compiled = stt_cuda_compiled();
+    status.providers_available = available_stt_providers();
+    for (const auto& [provider, bundle] : impl_->bundles) {
+        (void)bundle;
+        status.loaded_providers.push_back(provider);
+    }
+
+    const auto& active = ensure_provider_locked(status.provider);
+    status.parakeet_ready = active.parakeet != nullptr;
+    status.whisper_ready = active.whisper != nullptr;
     status.parakeet_model = impl_->parakeet_paths.label;
     status.whisper_model = impl_->whisper_paths.label;
+    status.vad_ready = impl_->vad && impl_->vad->ready();
+    status.vad_model = impl_->vad_model_name;
+    status.vad_model_id = impl_->vad_model_id;
     return status;
+}
+
+bool SttEngine::reload_vad(const std::string& model_selector) {
+    if (!config_.vad.enabled) {
+        return false;
+    }
+    std::lock_guard lock(mutex_);
+    const auto resolved = resolve_vad_model(config_.models_dir, model_selector, {});
+    if (resolved.path.empty()) {
+        return false;
+    }
+    config_.vad.model = model_selector;
+    auto vad_cfg = config_.vad;
+    vad_cfg.model_path = resolved.path;
+    if (vad_cfg.provider.empty()) {
+        vad_cfg.provider = config_.provider;
+    }
+    auto next = std::make_unique<SileroVad>(vad_cfg);
+    if (!next->ready()) {
+        return false;
+    }
+    impl_->vad = std::move(next);
+    impl_->vad_model_id = resolved.id;
+    impl_->vad_model_name = resolved.name;
+    std::cerr << "voiceqas STT: silero VAD reloaded [" << resolved.id << "] from " << resolved.path
+              << '\n';
+    return true;
+}
+
+std::string SttEngine::active_vad_model_id() const {
+    std::lock_guard lock(mutex_);
+    return impl_->vad_model_id;
 }
 
 TranscriptResult SttEngine::transcribe_pcm16(
     std::span<const int16_t> pcm,
     int sample_rate,
-    TranscribeOptions options) const {
+    TranscribeOptions options) {
     TranscriptResult failure;
     if (!config_.enabled) {
         failure.error = "STT disabled";
@@ -300,27 +441,61 @@ TranscriptResult SttEngine::transcribe_pcm16(
 
     const auto language = options.language.empty() ? config_.language : options.language;
     const auto choice = options.model;
+    const auto provider = normalize_stt_provider(options.provider.value_or(config_.provider));
+    if (const auto provider_error = validate_stt_provider(provider); !provider_error.empty()) {
+        failure.error = provider_error;
+        return failure;
+    }
 
     std::lock_guard lock(mutex_);
+    auto& bundle = ensure_provider_locked(provider);
+
+    std::vector<int16_t> working(pcm.begin(), pcm.end());
+    int rate = sample_rate;
+    const auto bytes_in = working.size() * sizeof(int16_t);
+    const bool apply_vad =
+        options.apply_vad.value_or(config_.vad.enabled && config_.vad.apply_before_stt);
+    if (apply_vad && impl_->vad && impl_->vad->ready()) {
+        const auto vad_started = std::chrono::steady_clock::now();
+        working = impl_->vad->extract_speech(working, rate);
+        rate = 16000;
+        const auto vad_ms = std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - vad_started)
+                                .count();
+        if (options.telemetry_session_id) {
+            telemetry_->record_vad(
+                *options.telemetry_session_id,
+                vad_ms,
+                bytes_in,
+                working.size() * sizeof(int16_t));
+        }
+        if (working.empty()) {
+            TranscriptResult empty;
+            empty.ok = true;
+            empty.model = "vad-filtered";
+            empty.language = language;
+            return empty;
+        }
+    }
 
     auto try_parakeet = [&]() -> TranscriptResult {
-        if (!impl_->parakeet) {
+        if (!bundle.parakeet) {
             TranscriptResult unavailable;
-            unavailable.error = "parakeet model unavailable";
+            unavailable.error = "parakeet model unavailable for provider " + provider;
             return unavailable;
         }
         return decode_with_recognizer(
-            impl_->parakeet, impl_->parakeet_paths.label, language, pcm, sample_rate);
+            bundle.parakeet, impl_->parakeet_paths.label, language, working, rate);
     };
 
     auto try_whisper = [&]() -> TranscriptResult {
-        if (!impl_->whisper) {
+        if (!bundle.whisper) {
             TranscriptResult unavailable;
-            unavailable.error = "whisper model unavailable";
+            unavailable.error = "whisper model unavailable for provider " + provider;
             return unavailable;
         }
         return decode_with_recognizer(
-            impl_->whisper, impl_->whisper_paths.label, language, pcm, sample_rate);
+            bundle.whisper, impl_->whisper_paths.label, language, working, rate);
     };
 
     if (choice == SttModelChoice::Parakeet) {

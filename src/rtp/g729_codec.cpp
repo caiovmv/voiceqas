@@ -10,12 +10,33 @@ extern "C" {
 
 namespace voiceqas::rtp {
 
-std::vector<int16_t> decode_g729(std::span<const uint8_t> encoded) {
-    if (encoded.empty()) {
-        return {};
+struct G729Decoder::Impl {
+    bcg729DecoderChannelContextStruct* ctx = nullptr;
+
+    Impl() { ctx = initBcg729DecoderChannel(); }
+    ~Impl() {
+        if (ctx) {
+            closeBcg729DecoderChannel(ctx);
+        }
     }
-    bcg729DecoderChannelContextStruct* ctx = initBcg729DecoderChannel();
-    if (!ctx) {
+};
+
+struct G729Encoder::Impl {
+    bcg729EncoderChannelContextStruct* ctx = nullptr;
+
+    Impl() { ctx = initBcg729EncoderChannel(0); }
+    ~Impl() {
+        if (ctx) {
+            closeBcg729EncoderChannel(ctx);
+        }
+    }
+};
+
+G729Decoder::G729Decoder() : impl_(std::make_unique<Impl>()) {}
+G729Decoder::~G729Decoder() = default;
+
+std::vector<int16_t> G729Decoder::decode(std::span<const uint8_t> encoded) {
+    if (!impl_ || !impl_->ctx || encoded.empty()) {
         return {};
     }
 
@@ -27,7 +48,7 @@ std::vector<int16_t> decode_g729(std::span<const uint8_t> encoded) {
         std::array<int16_t, kG729FrameSamples> frame{};
         const uint8_t sid = chunk == 2 ? 1 : 0;
         bcg729Decoder(
-            ctx,
+            impl_->ctx,
             encoded.data() + offset,
             static_cast<uint8_t>(chunk),
             0,
@@ -36,17 +57,14 @@ std::vector<int16_t> decode_g729(std::span<const uint8_t> encoded) {
             frame.data());
         pcm.insert(pcm.end(), frame.begin(), frame.end());
     }
-
-    closeBcg729DecoderChannel(ctx);
     return pcm;
 }
 
-std::vector<uint8_t> encode_g729(std::span<const int16_t> pcm) {
-    if (pcm.empty()) {
-        return {};
-    }
-    bcg729EncoderChannelContextStruct* ctx = initBcg729EncoderChannel(0);
-    if (!ctx) {
+G729Encoder::G729Encoder() : impl_(std::make_unique<Impl>()) {}
+G729Encoder::~G729Encoder() = default;
+
+std::vector<uint8_t> G729Encoder::encode(std::span<const int16_t> pcm) {
+    if (!impl_ || !impl_->ctx || pcm.empty()) {
         return {};
     }
 
@@ -56,15 +74,23 @@ std::vector<uint8_t> encode_g729(std::span<const int16_t> pcm) {
     for (size_t offset = 0; offset + kG729FrameSamples <= pcm.size(); offset += kG729FrameSamples) {
         std::array<uint8_t, kG729FrameBytes> frame{};
         uint8_t length = 0;
-        bcg729Encoder(ctx, pcm.data() + offset, frame.data(), &length);
+        bcg729Encoder(impl_->ctx, pcm.data() + offset, frame.data(), &length);
         if (length == 0) {
             continue;
         }
         out.insert(out.end(), frame.begin(), frame.begin() + length);
     }
-
-    closeBcg729EncoderChannel(ctx);
     return out;
+}
+
+std::vector<int16_t> decode_g729(std::span<const uint8_t> encoded) {
+    G729Decoder decoder;
+    return decoder.decode(encoded);
+}
+
+std::vector<uint8_t> encode_g729(std::span<const int16_t> pcm) {
+    G729Encoder encoder;
+    return encoder.encode(pcm);
 }
 
 }  // namespace voiceqas::rtp

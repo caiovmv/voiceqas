@@ -1,6 +1,8 @@
 # voiceqas
 
-Serviço C++ de **avaliação de qualidade de voz** para áudio de tronco SIP (PCM e RTP: G.711, G.722, G.729), com gate **STT-ready** e **transcrição STT embutida** (sherpa-onnx: Parakeet v3 + Whisper turbo pt).
+Serviço C++ de **avaliação de qualidade de voz** para áudio de tronco SIP (PCM e RTP: G.711, G.722, G.729), com gate **STT-ready**, **transcrição STT embutida** (sherpa-onnx) e **media relay UDP** (AGC inbound + egress do agente no codec negociado).
+
+Contexto para desenvolvimento com agentes: [`AGENTS.md`](AGENTS.md).
 
 ## Stack
 
@@ -20,29 +22,36 @@ Serviço C++ de **avaliação de qualidade de voz** para áudio de tronco SIP (P
 
 | Interface | Porta | Uso |
 |-----------|-------|-----|
-| REST + Docs + UI | 8080 | API batch, **STT**, Swagger, ReDoc, playground |
+| REST + Docs + UI | 8080 | API batch, **STT**, media sessions, Swagger |
 | WebSocket | 8081 | VQA `/v1/stream` · STT `/v1/stt/stream` |
 | gRPC | 50051 | `VoiceQualityService` + `SpeechToTextService` |
+| **Media RTP (UDP)** | **10000** | Relay inbound interlocutor + outbound agente G.711/G.722/G.729 |
 | **Tester Web (React 19)** | **3000** | Gravação, codecs, VQA e STT |
 
 ## Docker (recomendado)
 
 ```bash
 cd voiceqas
-./scripts/download-stt-models.sh /caminho/local/stt   # ou use volume Docker
+docker run --rm -v voiceqas_stt-models:/models/stt -v "$PWD/scripts:/scripts" debian:trixie-slim \
+  bash -c "apt-get update -qq && apt-get install -y -qq curl bzip2 && bash /scripts/download-stt-models.sh /models/stt"
 docker compose up --build
 ```
 
-Sobe:
-- **voiceqas** — backend C++ monolito com STT sherpa-onnx (8080, 8081, 50051)
-- **tester-web** — interface React 19 + Vite (porta **3000**)
+### Serviços
 
-Modelos STT (~2 GB) ficam no volume `stt-models` montado em `/models/stt`. Baixe antes com o script acima ou:
+| Serviço | URL | Notas |
+|---------|-----|-------|
+| **voiceqas** | REST `http://localhost:9080` | Mapeado 9080→8080 (evita conflito local) |
+| **command-center** | `http://localhost:3000` | Tester `#tester` · NOC `#command-center` |
+| **Grafana** | `http://localhost:3001` | admin/admin · dashboard VoiceQAS |
+| **Prometheus** | `http://localhost:9090` | Scrape `/metrics` |
+| **Aloy** | `http://localhost:12345` | Logs Docker → Loki |
 
-```bash
-docker run --rm -v voiceqas_stt-models:/models/stt -v "$PWD/scripts:/scripts" debian:trixie-slim \
-  bash -c "apt-get update && apt-get install -y curl bzip2 && /scripts/download-stt-models.sh /models/stt"
-```
+Tokens dev no compose: `dev-read`, `dev-write`, `dev-admin` (`X-Ops-Token`).
+
+Modelos STT (~1,6 GB) no volume `voiceqas_stt-models`: parakeet, whisper, 4 variantes Silero VAD.
+
+Ver [`docs/spec/audio-pipeline.md`](docs/spec/audio-pipeline.md) e [`docs/spec/command-center-ui.md`](docs/spec/command-center-ui.md).
 
 ### Tester Web (React 19 + Vite)
 
@@ -136,6 +145,41 @@ curl -s -X POST http://localhost:8080/v1/stt/transcribe \
 
 Endpoint dedicado: **`POST /v1/stt/transcribe`** (aceita os mesmos formatos de áudio da análise VQA).
 
+## Media relay (pipeline bidirecional)
+
+Documentação completa: [`docs/spec/audio-pipeline.md`](docs/spec/audio-pipeline.md)
+
+### Registrar sessão
+
+```bash
+curl -s -X POST http://localhost:8080/v1/media/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "call-1",
+    "format": "rtp_pcmu",
+    "remote_host": "10.0.0.5",
+    "remote_port": 12000,
+    "sample_rate": 8000
+  }' | jq
+```
+
+### Enviar áudio do agente (PCM16 → G.711 → RTP/UDP)
+
+```bash
+curl -s -X POST http://localhost:8080/v1/media/sessions/call-1/agent-audio \
+  -H "Content-Type: application/octet-stream" \
+  -H "X-Sample-Rate: 16000" \
+  --data-binary @agent.pcm | jq
+```
+
+### Encerrar sessão
+
+```bash
+curl -s -X DELETE http://localhost:8080/v1/media/sessions/call-1
+```
+
+RTP inbound do interlocutor: enviar pacotes UDP para `localhost:10000`. O pipeline aplica decode + AGC antes de VQA/STT.
+
 ## Variáveis de ambiente
 
 | Variável | Default |
@@ -150,6 +194,8 @@ Endpoint dedicado: **`POST /v1/stt/transcribe`** (aceita os mesmos formatos de �
 | `VOICEQAS_WEB_ROOT` | `web` |
 | `VOICEQAS_OPENAPI_PATH` | `openapi/voiceqas.yaml` |
 | `VOICEQAS_STT_THRESHOLD` | `65` |
+| `VOICEQAS_MEDIA_RTP_ADDR` | `0.0.0.0:10000` |
+| `VOICEQAS_AUDIO_NORMALIZE` | `true` |
 
 ## Playground gRPC no browser
 

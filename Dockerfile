@@ -32,6 +32,7 @@ ARG NLOHMANN_JSON_VERSION=3.12.0
 ARG CPP_HTTPLIB_VERSION=0.48.0
 ARG YAML_CPP_VERSION=0.9.0
 ARG GTEST_VERSION=1.17.0
+ARG VOICEQAS_STT_CUDA=0
 
 # -----------------------------------------------------------------------------
 # Stage 1: toolchain + vcpkg (commit = baseline fixo)
@@ -85,6 +86,8 @@ ARG NLOHMANN_JSON_VERSION
 ARG CPP_HTTPLIB_VERSION
 ARG YAML_CPP_VERSION
 ARG GTEST_VERSION
+ARG VOICEQAS_STT_CUDA
+ARG VOICEQAS_BUILD_TESTS=OFF
 
 ENV CMAKE_MAKE_PROGRAM=/usr/bin/ninja \
     CMAKE_CXX_COMPILER=/usr/local/bin/g++ \
@@ -131,12 +134,21 @@ RUN --mount=type=cache,target=/opt/vcpkg/downloads,id=voiceqas-vcpkg-dl \
     --mount=type=cache,target=/src/vcpkg_installed,id=voiceqas-vcpkg-installed \
     --mount=type=cache,target=/src/build/_deps,id=voiceqas-fetchcontent-shared-ort \
     --mount=type=cache,target=/root/.ccache,id=voiceqas-ccache \
+    bash -c 'if [[ "${VOICEQAS_BUILD_TESTS}" == "ON" ]]; then \
+      "${VCPKG_ROOT}/vcpkg" install \
+        --triplet "${VCPKG_DEFAULT_TRIPLET}" \
+        --x-manifest-root=/src \
+        --x-install-root=/src/vcpkg_installed \
+        --x-feature=test; \
+    fi && \
     cmake -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
-        -DVOICEQAS_BUILD_TESTS=OFF \
+        -DVOICEQAS_BUILD_TESTS="${VOICEQAS_BUILD_TESTS}" \
         -DVOICEQAS_ENABLE_STT=ON \
+        -DVOICEQAS_STT_CUDA=${VOICEQAS_STT_CUDA} \
         -DVCPKG_INSTALLED_DIR=/src/vcpkg_installed \
-    && cmake --build build -j"$(nproc)"
+    && cmake --build build -j"$(nproc)" \
+    && if [[ "${VOICEQAS_BUILD_TESTS}" == "ON" ]]; then cd build && ctest --output-on-failure; fi'
 
 # Metadados de versões resolvidas no build
 RUN { \
@@ -163,7 +175,8 @@ RUN --mount=type=cache,target=/src/build/_deps,id=voiceqas-fetchcontent-shared-o
 mkdir -p /runtime/bin /runtime/lib /runtime/share && \
 cp /src/build/voiceqas-server /runtime/bin/ && \
 cp /src/build/dependency-versions.txt /runtime/share/ && \
-find /src/build -name 'libonnxruntime.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true && \
+find /src/build/_deps -name 'libonnxruntime*.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true && \
+find /src/build -name 'libonnxruntime*.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true && \
 find /src/build/lib -maxdepth 1 -name 'libsherpa-onnx*.so*' -exec cp -Ln {} /runtime/lib/ \; 2>/dev/null || true && \
 if [[ -d "/src/vcpkg_installed/${VCPKG_DEFAULT_TRIPLET}/lib" ]]; then \
   cp -a "/src/vcpkg_installed/${VCPKG_DEFAULT_TRIPLET}/lib/"*.so* /runtime/lib/ 2>/dev/null || true; \
@@ -180,12 +193,14 @@ LIBSTDCPP="$(gcc -print-file-name=libstdc++.so.6)" && \
 LIBGCC="$(gcc -print-file-name=libgcc_s.so.1)" && \
 [[ -f "${LIBGCC}" ]] && cp -Ln "${LIBGCC}" /runtime/lib/
 
+# Libs CUDA empacotadas no runtime (Docker Desktop/WSL nem sempre monta libcublas via toolkit).
+FROM nvidia/cuda:12.9.2-cudnn-runtime-ubuntu22.04 AS cuda-libs
+
 # -----------------------------------------------------------------------------
 # Stage 3: runtime mínimo
 # -----------------------------------------------------------------------------
 FROM debian:${DEBIAN_RUNTIME} AS runtime
-
-ARG GCC_VERSION
+ARG VOICEQAS_STT_CUDA=0ARG GCC_VERSION
 ARG CPP_STD
 ARG CMAKE_MIN_VERSION
 ARG VCPKG_BASELINE
@@ -206,7 +221,7 @@ LABEL org.opencontainers.image.title="voiceqas" \
 ENV DEBIAN_FRONTEND=noninteractive \
     VOICEQAS_WEB_ROOT=/app/web \
     VOICEQAS_OPENAPI_PATH=/app/openapi/voiceqas.yaml \
-    LD_LIBRARY_PATH=/usr/local/lib
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
@@ -218,6 +233,11 @@ WORKDIR /app
 
 COPY --from=builder /runtime/bin/voiceqas-server /usr/local/bin/voiceqas-server
 COPY --from=builder /runtime/lib/ /usr/local/lib/
+RUN --mount=type=bind,from=cuda-libs,source=/usr/local/cuda/lib64,target=/cuda-libs,readonly \
+    if [[ "${VOICEQAS_STT_CUDA}" == "1" ]]; then \
+      mkdir -p /usr/local/cuda/lib64 && \
+      cp -a /cuda-libs/. /usr/local/cuda/lib64/; \
+    fi
 COPY --from=builder /runtime/share/dependency-versions.txt /app/dependency-versions.txt
 COPY config/voiceqas.example.yaml /etc/voiceqas/voiceqas.yaml
 COPY web/ /app/web/

@@ -30,6 +30,9 @@ TranscribeOptions transcribe_options_from_json(
     } else {
         options.language = config.language;
     }
+    if (body.contains("provider")) {
+        options.provider = body.at("provider").get<std::string>();
+    }
     return options;
 }
 
@@ -53,6 +56,18 @@ TranscribeOptions transcribe_options_from_request(
         options.language = header_lang;
     } else if (body && body->contains("language")) {
         options.language = body->at("language").get<std::string>();
+    }
+
+    if (const auto session_id = header_value(req, "X-Session-Id"); !session_id.empty()) {
+        options.telemetry_session_id = session_id;
+    } else if (body && body->contains("session_id")) {
+        options.telemetry_session_id = body->at("session_id").get<std::string>();
+    }
+
+    if (const auto provider = header_value(req, "X-STT-Provider"); !provider.empty()) {
+        options.provider = provider;
+    } else if (body && body->contains("provider")) {
+        options.provider = body->at("provider").get<std::string>();
     }
 
     return options;

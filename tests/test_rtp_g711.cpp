@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "voiceqas/rtp/depacketizer.hpp"
+#include "voiceqas/rtp/g711_codec.hpp"
 
 namespace voiceqas::rtp {
 namespace {
@@ -48,6 +49,26 @@ TEST(G711Test, PcmuDecodeSilence) {
     const auto pcm = decode_g711_pcmu(encoded);
     ASSERT_EQ(pcm.size(), 1);
     EXPECT_NEAR(pcm[0], 0, 16);
+}
+
+TEST(G711Test, PcmuEncodeDecodeRoundTrip) {
+    const std::vector<int16_t> original = {0, 1000, -2000, 8000, -12000};
+    const auto encoded = encode_g711_pcmu(original);
+    const auto decoded = decode_g711_pcmu(encoded);
+    ASSERT_EQ(decoded.size(), original.size());
+    for (size_t i = 0; i < original.size(); ++i) {
+        EXPECT_NEAR(decoded[i], original[i], 512);
+    }
+}
+
+TEST(G711Test, PcmaEncodeDecodeRoundTrip) {
+    const std::vector<int16_t> original = {0, 500, -1500, 4000};
+    const auto encoded = encode_g711_pcma(original);
+    const auto decoded = decode_g711_pcma(encoded);
+    ASSERT_EQ(decoded.size(), original.size());
+    for (size_t i = 0; i < original.size(); ++i) {
+        EXPECT_NEAR(decoded[i], original[i], 512);
+    }
 }
 
 }  // namespace voiceqas::rtp

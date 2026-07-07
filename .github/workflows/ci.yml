@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, 'feature/**']
+  pull_request:
+
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      - name: Build and test
+        run: |
+          chmod +x scripts/build.sh scripts/run-tests.sh
+          VOICEQAS_BUILD_TESTS=1 ./scripts/build.sh
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache gcovr
+      - name: Coverage report
+        run: |
+          chmod +x scripts/build.sh scripts/coverage.sh
+          VOICEQAS_COVERAGE_MIN_LINE=45 ./scripts/coverage.sh
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tester-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tester-web/package-lock.json
+      - run: npm ci
+      - run: npm run test:coverage
+      - run: npm run build

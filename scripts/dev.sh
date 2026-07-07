@@ -23,7 +23,7 @@ log() { printf '>> %s\n' "$*"; }
 
 ensure_configured() {
   if [[ ! -f build/build.ninja ]]; then
-    log "Primeira configuração (cmake + deps vcpkg)..."
+    log "Primeira configuraÃ§Ã£o (cmake + deps vcpkg)..."
     CMAKE_BUILD_TYPE="$BUILD_TYPE" ./scripts/build.sh
     return
   fi
@@ -32,7 +32,7 @@ ensure_configured() {
   local current_type
   current_type="$(grep -m1 '^CMAKE_BUILD_TYPE:' build/CMakeCache.txt 2>/dev/null | awk -F= '{print $2}' || true)"
   if [[ -n "$current_type" && "$current_type" != "$BUILD_TYPE" ]]; then
-    log "BUILD_TYPE mudou ($current_type → $BUILD_TYPE), reconfigurando..."
+    log "BUILD_TYPE mudou ($current_type â†’ $BUILD_TYPE), reconfigurando..."
     CMAKE_BUILD_TYPE="$BUILD_TYPE" ./scripts/build.sh
   fi
 }
@@ -98,12 +98,12 @@ EOF
 
 main() {
   if [[ ! -f "$CONFIG" ]]; then
-    echo "Config não encontrada: $CONFIG" >&2
+    echo "Config nÃ£o encontrada: $CONFIG" >&2
     exit 1
   fi
 
   ensure_configured
-  log "Auto-reload ativo — config: $CONFIG | build: $BUILD_TYPE"
+  log "Auto-reload ativo â€” config: $CONFIG | build: $BUILD_TYPE"
   log "Monitorando: ${WATCH_DIRS[*]}"
   watch_sources
 }

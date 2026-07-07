@@ -1,0 +1,1207 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "title": "Command Center",
+      "type": "link",
+      "url": "http://localhost:3000/#command-center"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_active_sessions",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Pipeline Sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 0
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_finished_sessions",
+          "refId": "A"
+        }
+      ],
+      "title": "Finished Pipeline Sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 45
+              },
+              {
+                "color": "green",
+                "value": 65
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 0
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_composite_score{stage=\"vqa\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Fleet VQA Score",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 15,
+        "y": 0
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_jitter_ms{stage=\"rtp_ingress\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Fleet Jitter (RTP Ingress)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(voiceqas_pipeline_dropped_bytes_total{stage=\"stt_gate\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "STT Gate Dropped Bytes",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "marcusolsson-json-datasource",
+        "uid": "voiceqas-api"
+      },
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 20,
+      "options": {
+        "renderer": "canvas",
+        "editor": {
+          "format": "auto"
+        },
+        "getOption": "const frame = context.panel.data.series?.[0];\nif (!frame) {\n  return { title: { text: 'Sem dados de pipeline' }, series: [{ type: 'sankey', data: [], links: [] }] };\n}\nconst field = frame.fields?.find((f) => f.name === 'echarts');\nconst raw = field?.values?.[0] ?? field?.values?.buffer?.[0];\nif (!raw) {\n  return { title: { text: 'Aguardando tráfego (Tester ou RTP UDP :10000)' }, series: [{ type: 'sankey', data: [], links: [] }] };\n}\nconst opt = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst links = opt?.series?.[0]?.links ?? [];\nif (!links.length) {\n  return {\n    title: {\n      text: 'Pipeline Sankey — sem fluxo ativo',\n      subtext: 'Envie áudio no Tester (#tester) ou via RTP UDP :10000',\n    },\n    series: [{ type: 'sankey', data: [{ name: 'aguardando' }], links: [] }],\n  };\n}\nopt.title = {\n  text: 'Pipeline Sankey — ' + (context.grafana.replaceVariables('${scope:raw}') || 'fleet'),\n  subtext: links.length + ' links ativos',\n};\nreturn opt;"
+      },
+      "pluginVersion": "7.2.5",
+      "targets": [
+        {
+          "cacheDurationSeconds": 0,
+          "datasource": {
+            "type": "marcusolsson-json-datasource",
+            "uid": "voiceqas-api"
+          },
+          "fields": [
+            {
+              "jsonPath": "$.echarts",
+              "language": "jsonpath",
+              "name": "echarts"
+            },
+            {
+              "jsonPath": "$.scope",
+              "language": "jsonpath",
+              "name": "scope"
+            }
+          ],
+          "method": "GET",
+          "queryParams": "session_id=${session_id}",
+          "refId": "A",
+          "urlPath": "/v1/ops/pipeline/snapshot"
+        }
+      ],
+      "title": "Audio Pipeline Sankey",
+      "type": "volkovlabs-echarts-panel"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 25,
+      "panels": [],
+      "title": "Pipeline Stages (per-step metrics)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage sip_in.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
+      "id": 100,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(voiceqas_pipeline_bytes_total{stage=\"sip_in\",direction=\"inbound\"}[1m])",
+          "legendFormat": "throughput",
+          "refId": "A"
+        }
+      ],
+      "title": "sip_in — SIP Trunk (in)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage rtp_ingress.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rate(voiceqas_pipeline_bytes_total{stage=\"rtp_ingress\",direction=\"inbound\"}[1m])"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 23
+      },
+      "id": 101,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_jitter_ms{stage=\"rtp_ingress\",direction=\"inbound\"}",
+          "legendFormat": "jitter",
+          "refId": "A"
+        },
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"rtp_ingress\",direction=\"inbound\"}",
+          "legendFormat": "latency",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(voiceqas_pipeline_bytes_total{stage=\"rtp_ingress\",direction=\"inbound\"}[1m])",
+          "legendFormat": "throughput",
+          "refId": "C"
+        }
+      ],
+      "title": "rtp_ingress — RTP Ingress",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage decode_vqa.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rate(voiceqas_pipeline_bytes_total{stage=\"decode_vqa\",direction=\"inbound\"}[1m])"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 23
+      },
+      "id": 102,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"decode_vqa\",direction=\"inbound\"}",
+          "legendFormat": "decode latency",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(voiceqas_pipeline_bytes_total{stage=\"decode_vqa\",direction=\"inbound\"}[1m])",
+          "legendFormat": "throughput",
+          "refId": "B"
+        }
+      ],
+      "title": "decode_vqa — Decode (VQA path)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage agc_vqa.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 30
+      },
+      "id": 103,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"agc_vqa\",direction=\"inbound\"}",
+          "legendFormat": "agc latency",
+          "refId": "A"
+        }
+      ],
+      "title": "agc_vqa — AGC Normalize (VQA)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage enhancement.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 30
+      },
+      "id": 104,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(voiceqas_pipeline_bytes_total{stage=\"enhancement\",direction=\"inbound\"}[1m])",
+          "legendFormat": "throughput",
+          "refId": "A"
+        }
+      ],
+      "title": "enhancement — Audio Enhancement",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage vqa.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "voiceqas_pipeline_composite_score{stage=\"vqa\",direction=\"inbound\"}"
+            },
+            "properties": []
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "voiceqas_pipeline_jitter_ms{stage=\"vqa\",direction=\"inbound\"}"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "voiceqas_pipeline_composite_score{stage=\"vqa\",direction=\"inbound\"}"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 30
+      },
+      "id": 105,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_composite_score{stage=\"vqa\",direction=\"inbound\"}",
+          "legendFormat": "composite score",
+          "refId": "A"
+        },
+        {
+          "expr": "voiceqas_pipeline_jitter_ms{stage=\"vqa\",direction=\"inbound\"}",
+          "legendFormat": "jitter",
+          "refId": "B"
+        }
+      ],
+      "title": "vqa — VQA Analyzer",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage stt_gate.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "Bps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "voiceqas_pipeline_composite_score{stage=\"stt_gate\",direction=\"inbound\"}"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "voiceqas_pipeline_composite_score{stage=\"stt_gate\",direction=\"inbound\"}"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 37
+      },
+      "id": 106,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(voiceqas_pipeline_dropped_bytes_total{stage=\"stt_gate\",direction=\"inbound\"}[1m])",
+          "legendFormat": "dropped",
+          "refId": "A"
+        },
+        {
+          "expr": "voiceqas_pipeline_composite_score{stage=\"stt_gate\",direction=\"inbound\"}",
+          "legendFormat": "VQA score",
+          "refId": "B"
+        }
+      ],
+      "title": "stt_gate — STT Gate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage decode_stt.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rate(voiceqas_pipeline_bytes_total{stage=\"decode_stt\",direction=\"inbound\"}[1m])"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 37
+      },
+      "id": 107,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"decode_stt\",direction=\"inbound\"}",
+          "legendFormat": "decode latency",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(voiceqas_pipeline_bytes_total{stage=\"decode_stt\",direction=\"inbound\"}[1m])",
+          "legendFormat": "throughput",
+          "refId": "B"
+        }
+      ],
+      "title": "decode_stt — Decode (STT path)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage agc_stt.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 37
+      },
+      "id": 108,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"agc_stt\",direction=\"inbound\"}",
+          "legendFormat": "agc latency",
+          "refId": "A"
+        }
+      ],
+      "title": "agc_stt — AGC (STT path)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage resample_16k.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 44
+      },
+      "id": 109,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"resample_16k\",direction=\"inbound\"}",
+          "legendFormat": "resample latency",
+          "refId": "A"
+        }
+      ],
+      "title": "resample_16k — Resample 16 kHz",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fleet EWMA metrics for pipeline stage stt_buffer.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity"
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "voiceqas_pipeline_latency_ms{stage=\"stt_buffer\",direction=\"inbound\"}"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 44
+      },
+      "id": 110,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "voiceqas_pipeline_bytes_total{stage=\"stt_buffer\",direction=\"inbound\"}",
+          "legendFormat": "buffer bytes",
+          "refId": "A"
+        },
+        {
+          "expr": "voiceqas_pipeline_latency_ms{stage=\"stt_buffer\",direction=\"inbound\"}",
+          "legendFormat": "latency",
+          "refId": "B"
+        }
+      ],
+      "title": "stt_buffer — STT Buffer",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "marcusolsson-json-datasource",
+        "uid": "voiceqas-api"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "id": 40,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "marcusolsson-json-datasource",
+            "uid": "voiceqas-api"
+          },
+          "fields": [
+            {
+              "jsonPath": "$.active_sessions[*].session_id",
+              "language": "jsonpath",
+              "name": "session_id"
+            },
+            {
+              "jsonPath": "$.active_sessions[*].codec",
+              "language": "jsonpath",
+              "name": "codec"
+            },
+            {
+              "jsonPath": "$.active_sessions[*].composite_score",
+              "language": "jsonpath",
+              "name": "composite_score"
+            },
+            {
+              "jsonPath": "$.active_sessions[*].last_seen_ms",
+              "language": "jsonpath",
+              "name": "last_seen_ms"
+            }
+          ],
+          "method": "GET",
+          "refId": "A",
+          "urlPath": "/v1/ops/pipeline/sessions"
+        }
+      ],
+      "title": "Active Pipeline Sessions",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "marcusolsson-json-datasource",
+        "uid": "voiceqas-api"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "id": 41,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "marcusolsson-json-datasource",
+            "uid": "voiceqas-api"
+          },
+          "fields": [
+            {
+              "jsonPath": "$.finished_sessions[*].session_id",
+              "language": "jsonpath",
+              "name": "session_id"
+            },
+            {
+              "jsonPath": "$.finished_sessions[*].reason",
+              "language": "jsonpath",
+              "name": "reason"
+            },
+            {
+              "jsonPath": "$.finished_sessions[*].composite_score",
+              "language": "jsonpath",
+              "name": "composite_score"
+            },
+            {
+              "jsonPath": "$.finished_sessions[*].duration_ms",
+              "language": "jsonpath",
+              "name": "duration_ms"
+            },
+            {
+              "jsonPath": "$.finished_sessions[*].finished_ms",
+              "language": "jsonpath",
+              "name": "finished_ms"
+            }
+          ],
+          "method": "GET",
+          "refId": "A",
+          "urlPath": "/v1/ops/pipeline/sessions"
+        }
+      ],
+      "title": "Finished Pipeline Sessions",
+      "type": "table"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": [
+    "voiceqas",
+    "pipeline",
+    "sankey"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": "",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "marcusolsson-json-datasource",
+          "uid": "voiceqas-api"
+        },
+        "definition": "",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Session ID (debug)",
+        "multi": false,
+        "name": "session_id",
+        "options": [],
+        "query": {
+          "fields": [
+            {
+              "jsonPath": "$.session_ids[*]",
+              "language": "jsonpath",
+              "name": "session_id"
+            }
+          ],
+          "method": "GET",
+          "urlPath": "/v1/ops/pipeline/sessions"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "VoiceQAS Pipeline Sankey",
+  "uid": "voiceqas-pipeline-sankey",
+  "version": 3
+}

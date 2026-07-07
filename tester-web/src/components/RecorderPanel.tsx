@@ -1,3 +1,5 @@
+import { Waveform } from './Waveform';
+
 interface Props {
   isRecording: boolean;
   durationSec: number;
@@ -5,6 +7,8 @@ interface Props {
   hasAudio: boolean;
   sampleCount: number;
   sourceRate: number;
+  pcm?: Int16Array | null;
+  liveWave?: Float32Array | null;
   onStart: () => void;
   onStop: () => void;
   onFile: (f: File) => void;
@@ -18,6 +22,8 @@ export function RecorderPanel({
   hasAudio,
   sampleCount,
   sourceRate,
+  pcm,
+  liveWave,
   onStart,
   onStop,
   onFile,
@@ -27,8 +33,8 @@ export function RecorderPanel({
     <section className="panel">
       <h2>Gravação (browser / WebRTC)</h2>
       <p className="muted">
-        Captura via <code>getUserMedia</code> — simula áudio recebido do tronco SIP no
-        navegador.
+        Captura via <code>getUserMedia</code> a 16 kHz (wideband). Sem monitor no alto-falante
+        durante a gravação.
       </p>
       <div className="row">
         {!isRecording ? (
@@ -68,6 +74,9 @@ export function RecorderPanel({
         )}
       </div>
       {error && <p className="error">{error}</p>}
+      {(isRecording || hasAudio) && (
+        <Waveform pcm={pcm ?? null} liveSamples={isRecording ? liveWave : null} />
+      )}
       {hasAudio && (
         <p className="ok">
           Áudio pronto: {sampleCount} amostras (origem ~{sourceRate} Hz)

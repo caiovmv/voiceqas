@@ -6,7 +6,10 @@
 
 #include "voiceqas/analyzer.hpp"
 #include "voiceqas/config.hpp"
+#include "voiceqas/media/session.hpp"
+#include "voiceqas/ops/adapters/ops_ports.hpp"
 #include "voiceqas/server/grpc_server.hpp"
+#include "voiceqas/server/media_relay.hpp"
 #include "voiceqas/server/rest_server.hpp"
 #include "voiceqas/server/ws_server.hpp"
 #include "voiceqas/stt/client.hpp"
@@ -26,35 +29,74 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
-    const auto server_cfg = voiceqas::load_config(argc, argv);
-    auto sessions = std::make_shared<voiceqas::SessionManager>(voiceqas::global_analyzer_config());
+    const auto app_cfg = voiceqas::load_app_config(argc, argv);
+    auto metrics = voiceqas::ops::make_ops_metrics_publisher();
+    auto telemetry = voiceqas::ops::make_ops_pipeline_telemetry();
+    auto sessions = std::make_shared<voiceqas::VqaSessionManager>(
+        app_cfg.analyzer, app_cfg.audio, metrics, telemetry);
 
-    const auto stt_cfg = voiceqas::global_stt_config();
-    auto stt_engine = std::make_shared<voiceqas::stt::SttEngine>(stt_cfg);
+    auto stt_engine = std::make_shared<voiceqas::stt::SttEngine>(app_cfg.stt, telemetry);
     auto stt_sessions = std::make_shared<voiceqas::stt::SttSessionManager>(
-        stt_engine, stt_cfg, stt_cfg.target_sample_rate);
+        stt_engine,
+        app_cfg.stt,
+        app_cfg.ops,
+        metrics,
+        telemetry,
+        app_cfg.audio,
+        app_cfg.stt.target_sample_rate);
+
+    auto media_sessions = std::make_shared<voiceqas::media::MediaSessionManager>(
+        app_cfg.audio, app_cfg.media, telemetry);
 
     voiceqas::RestServer rest(
-        server_cfg.rest_addr,
-        server_cfg.web_root,
-        server_cfg.openapi_path,
+        app_cfg.server.rest_addr,
+        app_cfg.server.web_root,
+        app_cfg.server.openapi_path,
+        app_cfg.media,
         sessions,
-        stt_sessions);
-    voiceqas::WebSocketServer ws(server_cfg.ws_addr, sessions, stt_sessions);
+        stt_sessions,
+        media_sessions);
+    voiceqas::WebSocketServer ws(app_cfg.server.ws_addr, sessions, stt_sessions);
+
+    std::unique_ptr<voiceqas::MediaRelayServer> media_relay;
+    if (app_cfg.media.enabled) {
+        media_relay = std::make_unique<voiceqas::MediaRelayServer>(
+            app_cfg.server.media_rtp_addr,
+            app_cfg.media,
+            media_sessions,
+            sessions,
+            stt_sessions,
+            telemetry);
+        media_sessions->set_route_callback(
+            [&media_relay](const std::string& host, uint16_t port, const std::string& session_id, bool bind) {
+                if (!media_relay) {
+                    return;
+                }
+                if (bind) {
+                    media_relay->bind_endpoint(host, port, session_id);
+                } else {
+                    media_relay->unbind_endpoint(host, port);
+                }
+            });
+        media_relay->run();
+    }
 
     rest.run();
     ws.run();
 
-    std::thread grpc_thread([&server_cfg, sessions, stt_sessions]() {
-        voiceqas::GrpcServer grpc(server_cfg.grpc_addr, sessions, stt_sessions);
+    std::thread grpc_thread([&app_cfg, sessions, stt_sessions, media_sessions]() {
+        voiceqas::GrpcServer grpc(app_cfg.server.grpc_addr, sessions, stt_sessions, media_sessions);
         grpc.run();
     });
 
     const auto ready = stt_engine->ready_status();
     std::cout << "voiceqas started\n"
-              << "  REST: " << server_cfg.rest_addr << '\n'
-              << "  gRPC: " << server_cfg.grpc_addr << '\n'
-              << "  WS:   " << server_cfg.ws_addr << '\n'
+              << "  REST: " << app_cfg.server.rest_addr << '\n'
+              << "  gRPC: " << app_cfg.server.grpc_addr << '\n'
+              << "  WS:   " << app_cfg.server.ws_addr << '\n'
+              << "  Media RTP: " << app_cfg.server.media_rtp_addr
+              << " (preferred ingress: "
+              << app_cfg.media.preferred_ingress_codec << ")\n"
               << "  STT:  embedded sherpa-onnx (parakeet="
               << (ready.parakeet_ready ? "ready" : "missing") << ", whisper="
               << (ready.whisper_ready ? "ready" : "missing") << ")\n";
@@ -63,10 +105,13 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
+    if (media_relay) {
+        media_relay->stop();
+    }
     rest.stop();
     ws.stop();
     if (grpc_thread.joinable()) {
-        grpc_thread.detach();
+        grpc_thread.join();
     }
 
     return 0;

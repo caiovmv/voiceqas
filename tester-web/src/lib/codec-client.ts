@@ -62,5 +62,5 @@ export async function decodeRtpViaBackend(
 }
 
 export function needsBackendCodec(format: AudioFormat): boolean {
-  return format === 'rtp_g722' || format === 'rtp_g729';
+  return format === 'rtp_g729';
 }

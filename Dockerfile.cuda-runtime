@@ -1,0 +1,11 @@
+# syntax=docker/dockerfile:1
+# Overlay CUDA runtime libs onto an existing voiceqas image (dev/test).
+FROM voiceqas:local AS base
+FROM nvidia/cuda:12.9.2-cudnn-runtime-ubuntu22.04 AS cuda-libs
+FROM base
+USER root
+RUN mkdir -p /usr/local/cuda/lib64
+COPY --from=cuda-libs /usr/local/cuda/lib64/ /usr/local/cuda/lib64/
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64
+RUN ldconfig
+USER voiceqas

@@ -1,6 +1,7 @@
 #include "voiceqas/analyzer.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -8,6 +9,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include "voiceqas/audio/decoder.hpp"
 #include "voiceqas/rtp/depacketizer.hpp"
 #include "voiceqas/stt_gate.hpp"
 
@@ -253,15 +255,29 @@ BatchResult VoiceAnalyzer::analyze_pcm_batch(std::span<const int16_t> samples, i
     return result;
 }
 
-SessionManager::SessionManager(AnalyzerConfig default_config)
-    : default_config_(std::move(default_config)) {}
+VqaSessionManager::SessionManager(
+    AnalyzerConfig default_config,
+    audio::AudioProcessingConfig audio_config,
+    std::shared_ptr<ports::IMetricsPublisher> metrics,
+    std::shared_ptr<ports::IPipelineTelemetry> telemetry)
+    : default_config_(std::move(default_config)),
+      audio_config_(std::move(audio_config)),
+      metrics_(std::move(metrics)),
+      telemetry_(std::move(telemetry)) {}
 
-std::optional<WindowMetrics> SessionManager::push_frame(
+VqaSessionManager::SessionManager(AnalyzerConfig default_config, audio::AudioProcessingConfig audio_config)
+    : SessionManager(
+          std::move(default_config),
+          std::move(audio_config),
+          ports::noop_metrics_publisher(),
+          ports::noop_pipeline_telemetry()) {}
+
+std::optional<WindowMetrics> VqaSessionManager::push_frame(
     const std::string& session_id,
     AudioFormat format,
     std::span<const uint8_t> payload,
     int64_t timestamp_ms) {
-    std::lock_guard lock(mutex_);
+    std::unique_lock lock(mutex_);
     auto& session = sessions_[session_id];
     const int rate = sample_rate_for_format(format);
     if (!session.analyzer || session.analyzer->config().sample_rate != rate) {
@@ -269,69 +285,131 @@ std::optional<WindowMetrics> SessionManager::push_frame(
         cfg.sample_rate = rate;
         session.analyzer = VoiceAnalyzer(cfg);
         session.rtp = rtp::RtpDepacketizer(rtp_clock_rate_for_format(format));
+        session.agc = audio::AgcState(audio_config_);
     }
 
-    std::vector<int16_t> pcm;
-    if (format == AudioFormat::RtpPcmu) {
-        auto decoded = session.rtp->decode_packet(payload, rtp::PayloadType::Pcmu);
-        pcm = std::move(decoded.pcm);
-        session.analyzer->set_rtp_metrics(decoded.stats.packet_loss_pct, decoded.stats.jitter_ms);
-    } else if (format == AudioFormat::RtpPcma) {
-        auto decoded = session.rtp->decode_packet(payload, rtp::PayloadType::Pcma);
-        pcm = std::move(decoded.pcm);
-        session.analyzer->set_rtp_metrics(decoded.stats.packet_loss_pct, decoded.stats.jitter_ms);
-    } else if (format == AudioFormat::RtpG722) {
-        auto decoded = session.rtp->decode_packet(payload, rtp::PayloadType::G722);
-        pcm = std::move(decoded.pcm);
-        session.analyzer->set_rtp_metrics(decoded.stats.packet_loss_pct, decoded.stats.jitter_ms);
-    } else if (format == AudioFormat::RtpG729) {
-        auto decoded = session.rtp->decode_packet(payload, rtp::PayloadType::G729);
-        pcm = std::move(decoded.pcm);
-        session.analyzer->set_rtp_metrics(decoded.stats.packet_loss_pct, decoded.stats.jitter_ms);
-    } else {
-        if (payload.size() % 2 != 0) {
-            return std::nullopt;
-        }
-        pcm.resize(payload.size() / 2);
-        std::memcpy(pcm.data(), payload.data(), payload.size());
+    const auto decode_started = std::chrono::steady_clock::now();
+    const auto decoded = audio::decode_to_pcm(format, payload, &(*session.rtp));
+    const auto decode_ms = std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - decode_started)
+                               .count();
+    if (!decoded.ok) {
+        return std::nullopt;
     }
 
-    return session.analyzer->push_pcm(pcm, timestamp_ms);
+    auto pcm = std::move(decoded.pcm);
+    double agc_ms = 0.0;
+    if (audio_config_.normalize_enabled && !pcm.empty()) {
+        const auto agc_started = std::chrono::steady_clock::now();
+        session.agc.process_inplace(pcm, rate);
+        agc_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - agc_started)
+                     .count();
+    }
+    telemetry_->record_rtp_ingress(
+        session_id,
+        payload.size(),
+        decoded.rtp_stats.jitter_ms,
+        decoded.rtp_stats.packet_loss_pct);
+    telemetry_->record_vqa_path(
+        session_id,
+        payload.size(),
+        pcm.size() * sizeof(int16_t),
+        decode_ms,
+        agc_ms,
+        decoded.rtp_stats.jitter_ms,
+        decoded.rtp_stats.packet_loss_pct);
+    session.analyzer->set_rtp_metrics(decoded.rtp_stats.packet_loss_pct, decoded.rtp_stats.jitter_ms);
+
+    if (auto report = session.analyzer->push_pcm(pcm, timestamp_ms)) {
+        metrics_->publish_vqa(session_id, *report);
+        return report;
+    }
+    return std::nullopt;
 }
 
-BatchResult SessionManager::analyze_batch(
+std::optional<WindowMetrics> VqaSessionManager::push_pcm(
+    const std::string& session_id,
+    std::span<const int16_t> pcm,
+    int64_t timestamp_ms,
+    int sample_rate) {
+    std::unique_lock lock(mutex_);
+    auto& session = sessions_[session_id];
+    if (!session.analyzer || session.analyzer->config().sample_rate != sample_rate) {
+        AnalyzerConfig cfg = default_config_;
+        cfg.sample_rate = sample_rate;
+        session.analyzer = VoiceAnalyzer(cfg);
+    }
+    std::vector<int16_t> copy(pcm.begin(), pcm.end());
+    if (audio_config_.normalize_enabled && !copy.empty()) {
+        session.agc.process_inplace(copy, sample_rate);
+    }
+    if (auto report = session.analyzer->push_pcm(copy, timestamp_ms)) {
+        metrics_->publish_vqa(session_id, *report);
+        return report;
+    }
+    return std::nullopt;
+}
+
+BatchResult VqaSessionManager::analyze_batch(
     AudioFormat format,
     std::span<const uint8_t> payload,
-    int sample_rate) {
+    int sample_rate,
+    const std::optional<std::string>& telemetry_session_id) {
+    const std::string session_id = telemetry_session_id.value_or(
+        "vqa-batch-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+
     AnalyzerConfig cfg = default_config_;
     cfg.sample_rate = sample_rate > 0 ? sample_rate : sample_rate_for_format(format);
     VoiceAnalyzer analyzer(cfg);
 
-    std::vector<int16_t> pcm;
-    if (format == AudioFormat::RtpPcmu || format == AudioFormat::RtpPcma
-        || format == AudioFormat::RtpG722 || format == AudioFormat::RtpG729) {
-        rtp::RtpDepacketizer depacketizer(rtp_clock_rate_for_format(format));
-        rtp::PayloadType pt = rtp::PayloadType::Pcmu;
-        switch (format) {
-            case AudioFormat::RtpPcma: pt = rtp::PayloadType::Pcma; break;
-            case AudioFormat::RtpG722: pt = rtp::PayloadType::G722; break;
-            case AudioFormat::RtpG729: pt = rtp::PayloadType::G729; break;
-            default: break;
-        }
-        auto decoded = depacketizer.decode_packet(payload, pt);
-        pcm = std::move(decoded.pcm);
-        analyzer.set_rtp_metrics(decoded.stats.packet_loss_pct, decoded.stats.jitter_ms);
-    } else {
-        pcm.resize(payload.size() / 2);
-        std::memcpy(pcm.data(), payload.data(), payload.size());
+    rtp::RtpDepacketizer depacketizer(rtp_clock_rate_for_format(format));
+    const auto decoded = audio::decode_to_pcm(format, payload, &depacketizer);
+    if (!decoded.ok) {
+        return {};
     }
 
-    return analyzer.analyze_pcm_batch(pcm, cfg.sample_rate);
+    telemetry_->set_session_codec(session_id, audio_format_to_string(format));
+    telemetry_->record_rtp_ingress(
+        session_id,
+        payload.size(),
+        decoded.rtp_stats.jitter_ms,
+        decoded.rtp_stats.packet_loss_pct);
+
+    auto pcm = decoded.pcm;
+    const auto pcm_bytes = pcm.size() * sizeof(int16_t);
+    double agc_ms = 0.0;
+    if (audio_config_.normalize_enabled && !pcm.empty()) {
+        const auto agc_started = std::chrono::steady_clock::now();
+        audio::AgcState agc(audio_config_);
+        agc.process_inplace(pcm, cfg.sample_rate);
+        agc_ms = std::chrono::duration<double, std::milli>(
+                     std::chrono::steady_clock::now() - agc_started)
+                     .count();
+    }
+    telemetry_->record_vqa_path(
+        session_id,
+        payload.size(),
+        pcm_bytes,
+        0.0,
+        agc_ms,
+        decoded.rtp_stats.jitter_ms,
+        decoded.rtp_stats.packet_loss_pct);
+    analyzer.set_rtp_metrics(decoded.rtp_stats.packet_loss_pct, decoded.rtp_stats.jitter_ms);
+
+    auto result = analyzer.analyze_pcm_batch(pcm, cfg.sample_rate);
+    if (!result.windows.empty()) {
+        telemetry_->record_vqa_window(session_id, result.aggregated);
+    }
+    telemetry_->finish_session(session_id, "batch");
+    return result;
 }
 
-void SessionManager::remove_session(const std::string& session_id) {
-    std::lock_guard lock(mutex_);
+void VqaSessionManager::remove_session(const std::string& session_id) {
+    std::unique_lock lock(mutex_);
     sessions_.erase(session_id);
+    telemetry_->on_session_removed(session_id);
+    telemetry_->remove_session(session_id);
 }
 
 }  // namespace voiceqas

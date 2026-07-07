@@ -2,6 +2,7 @@ server:
   rest_addr: "0.0.0.0:8080"
   grpc_addr: "0.0.0.0:50051"
   ws_addr: "0.0.0.0:8081"
+  media_rtp_addr: "0.0.0.0:10000"
   web_root: "/app/web"
   openapi_path: "/app/openapi/voiceqas.yaml"
 analyzer:
@@ -11,13 +12,49 @@ analyzer:
   min_snr_db: 12
   max_clipping_ratio: 0.02
   max_silence_ratio: 0.60
+audio:
+  normalize_enabled: true
+  agc_target_rms_dbfs: -20
+  agc_max_gain_db: 24
+  agc_attack_ms: 5
+  agc_release_ms: 100
+  limiter_ceiling_dbfs: -3
+media:
+  enabled: true
+  rtp_addr: "0.0.0.0:10000"
+  preferred_ingress_codec: "rtp_g722"
+  ingress_autodetect: true
 stt:
   enabled: true
   language: "pt"
   target_sample_rate: 16000
   default_model: "auto"
+  provider: cpu
   num_threads: 2
+  require_stt_ready: false
   models_dir: "/models/stt"
   parakeet_dir: "/models/stt/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
   whisper_dir: "/models/stt/sherpa-onnx-whisper-turbo"
   whisper_callcenter_dir: ""
+  vad:
+    enabled: true
+    apply_before_stt: false
+    model: auto
+    # model: k2fsa | k2fsa-int8 | v4 | v5
+    # model_path: "/models/stt/silero_vad.int8.onnx"
+    threshold: 0.45
+    min_speech_ms: 150
+    min_silence_ms: 300
+    num_threads: 1
+ops:
+  persistence_enabled: true
+  storage_path: "/tmp/voiceqas-ops.jsonl"
+  webhook_url: ""
+  alert_score_threshold: 0.45
+  stt_not_ready_alert_ms: 30000
+  partial_stt_interval_ms: 3000
+  partial_stt_window_ms: 5000
+  partial_stt_min_buffer_ms: 3000
+  # admin_token: "change-me"
+  # read_token: "read-only"
+  # write_token: "write-only"

@@ -1,5 +1,12 @@
-import type { CodecConfig } from '../lib/types';
-import { sampleRateForFormat } from '../lib/types';
+import { useEffect, useState } from 'react';
+import type { CodecConfig, SttProvider } from '../lib/types';
+import { checkSttReady } from '../lib/api';
+import {
+  RECORD_QUALITY_OPTIONS,
+  configForRecordQuality,
+  recordQualityIdForConfig,
+  type RecordQualityId,
+} from '../lib/types';
 
 interface Props {
   config: CodecConfig;
@@ -7,41 +14,62 @@ interface Props {
 }
 
 export function CodecConfigPanel({ config, onChange }: Props) {
+  const qualityId = recordQualityIdForConfig(config);
+  const [providersAvailable, setProvidersAvailable] = useState<SttProvider[]>(['cpu']);
+  const [cudaCompiled, setCudaCompiled] = useState(false);
+  const [serverProvider, setServerProvider] = useState('cpu');
+
+  useEffect(() => {
+    checkSttReady()
+      .then((ready) => {
+        const available = (ready.providers_available ?? ['cpu']).filter(
+          (p): p is SttProvider => p === 'cpu' || p === 'cuda',
+        );
+        setProvidersAvailable(available.length > 0 ? available : ['cpu']);
+        setCudaCompiled(Boolean(ready.cuda_compiled));
+        if (ready.provider) {
+          setServerProvider(ready.provider);
+        }
+      })
+      .catch(() => {
+        setProvidersAvailable(['cpu']);
+      });
+  }, []);
+
+  const setQuality = (id: RecordQualityId) => {
+    onChange(configForRecordQuality(id));
+  };
+
   return (
     <section className="panel">
       <h2>Codec & simulação SIP</h2>
+      <p className="muted">
+        Escolha como o áudio gravado será simulado no tronco SIP. STT sempre recebe PCM 16 kHz após
+        decode.
+      </p>
+
+      <fieldset className="radio-group">
+        <legend>Qualidade de gravação / transporte</legend>
+        {RECORD_QUALITY_OPTIONS.map((opt) => (
+          <label key={opt.id} className="radio-option">
+            <input
+              type="radio"
+              name="record-quality"
+              value={opt.id}
+              checked={qualityId === opt.id}
+              onChange={() => setQuality(opt.id)}
+            />
+            <span className="radio-option-body">
+              <strong>{opt.label}</strong>
+              <span className="muted">{opt.description}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
       <div className="grid-2">
         <label>
-          Formato
-          <select
-            value={config.format}
-            onChange={(e) => {
-              const format = e.target.value as CodecConfig['format'];
-              onChange({ format, sampleRate: sampleRateForFormat(format) });
-            }}
-          >
-            <option value="pcm_s16le_8k">PCM S16LE 8 kHz</option>
-            <option value="pcm_s16le_16k">PCM S16LE 16 kHz</option>
-            <option value="rtp_pcmu">RTP G.711 μ-law (PCMU)</option>
-            <option value="rtp_pcma">RTP G.711 A-law (PCMA)</option>
-            <option value="rtp_g722">RTP G.722 wideband (PT 9)</option>
-            <option value="rtp_g729">RTP G.729 (PT 18)</option>
-          </select>
-        </label>
-        <label>
-          Sample rate
-          <select
-            value={config.sampleRate}
-            onChange={(e) =>
-              onChange({ sampleRate: Number(e.target.value) as 8000 | 16000 })
-            }
-          >
-            <option value={8000}>8000 Hz</option>
-            <option value={16000}>16000 Hz</option>
-          </select>
-        </label>
-        <label>
-          Frame (ms)
+          Frame RTP (ms)
           <select
             value={config.frameMs}
             onChange={(e) =>
@@ -59,6 +87,7 @@ export function CodecConfigPanel({ config, onChange }: Props) {
             value={config.sessionId}
             onChange={(e) => onChange({ sessionId: e.target.value })}
           />
+          <span className="field-hint">Novo ID a cada gravação ou arquivo carregado</span>
         </label>
         <label>
           Modelo STT
@@ -71,41 +100,67 @@ export function CodecConfigPanel({ config, onChange }: Props) {
             <option value="whisper">whisper large-v3-turbo pt</option>
           </select>
         </label>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={config.simulateClipping}
-            onChange={(e) => onChange({ simulateClipping: e.target.checked })}
-          />
-          Simular clipping (ganho alto)
-        </label>
         <label>
-          Ganho clipping
-          <input
-            type="range"
-            min={1}
-            max={8}
-            step={0.1}
-            value={config.clippingGain}
-            disabled={!config.simulateClipping}
-            onChange={(e) => onChange({ clippingGain: Number(e.target.value) })}
-          />
-          {config.clippingGain.toFixed(1)}x
-        </label>
-        <label>
-          Perda de pacotes RTP (%)
-          <input
-            type="range"
-            min={0}
-            max={30}
-            value={config.simulatePacketLossPct}
+          Provider STT (ONNX)
+          <select
+            value={config.sttProvider}
             onChange={(e) =>
-              onChange({ simulatePacketLossPct: Number(e.target.value) })
+              onChange({ sttProvider: e.target.value as CodecConfig['sttProvider'] })
             }
-          />
-          {config.simulatePacketLossPct}%
+          >
+            {providersAvailable.map((provider) => (
+              <option key={provider} value={provider}>
+                {provider === 'cuda' ? 'CUDA (GPU)' : 'CPU'}
+              </option>
+            ))}
+          </select>
+          <span className="field-hint">
+            Servidor padrão: {serverProvider}
+            {cudaCompiled ? ' · build com CUDA' : ' · apenas CPU no build atual'}
+          </span>
         </label>
       </div>
+
+      <fieldset className="sim-options">
+        <legend>Simulação de degradação</legend>
+        <div className="grid-2">
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={config.simulateClipping}
+              onChange={(e) => onChange({ simulateClipping: e.target.checked })}
+            />
+            Simular clipping (saturação no PCM)
+          </label>
+          <label>
+            Ganho clipping
+            <input
+              type="number"
+              min={1}
+              max={12}
+              step={0.1}
+              value={config.clippingGain}
+              disabled={!config.simulateClipping}
+              onChange={(e) => onChange({ clippingGain: Number(e.target.value) })}
+            />
+          </label>
+          <label>
+            Perda de pacotes RTP (%)
+            <input
+              type="number"
+              min={0}
+              max={50}
+              step={1}
+              value={config.simulatePacketLossPct}
+              onChange={(e) => onChange({ simulatePacketLossPct: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+        <p className="muted">
+          Clipping é aplicado antes do encode do codec. Perda RTP descarta frames no envio WebSocket
+          (VQA e STT).
+        </p>
+      </fieldset>
     </section>
   );
 }

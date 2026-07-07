@@ -1,9 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <vector>
+
+#include "voiceqas/rtp/g722_codec.hpp"
+#include "voiceqas/rtp/g729_codec.hpp"
 
 namespace voiceqas::rtp {
 
@@ -56,6 +60,8 @@ private:
     uint32_t packets_received_ = 0;
     uint32_t packets_lost_ = 0;
     double jitter_ms_ = 0.0;
+    std::unique_ptr<G722Decoder> g722_decoder_;
+    std::unique_ptr<G729Decoder> g729_decoder_;
 };
 
 std::vector<int16_t> decode_g711_pcmu(std::span<const uint8_t> encoded);

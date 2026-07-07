@@ -12,6 +12,7 @@ interface Props {
   onAnalyze: () => void;
   onTranscribe: () => void;
   onGrpcReady: () => void;
+  onExport?: () => void;
 }
 
 export function ResultsPanel({
@@ -26,6 +27,7 @@ export function ResultsPanel({
   onAnalyze,
   onTranscribe,
   onGrpcReady,
+  onExport,
 }: Props) {
   const lastStream = streamReports[streamReports.length - 1];
 
@@ -53,6 +55,11 @@ export function ResultsPanel({
         {transport === 'grpc' && (
           <button className="btn" disabled={loading} onClick={onGrpcReady}>
             gRPC Ready
+          </button>
+        )}
+        {onExport && (
+          <button className="btn" disabled={loading} onClick={onExport}>
+            Export JSON
           </button>
         )}
       </div>

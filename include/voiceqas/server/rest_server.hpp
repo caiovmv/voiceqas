@@ -5,6 +5,8 @@
 #include <thread>
 
 #include "voiceqas/analyzer.hpp"
+#include "voiceqas/audio/config.hpp"
+#include "voiceqas/media/session.hpp"
 #include "voiceqas/stt/session_manager.hpp"
 
 namespace voiceqas {
@@ -14,8 +16,10 @@ public:
     RestServer(std::string bind_addr,
                std::string web_root,
                std::string openapi_path,
-               std::shared_ptr<SessionManager> sessions,
-               std::shared_ptr<stt::SttSessionManager> stt_sessions);
+               audio::MediaRelayConfig media_config,
+               std::shared_ptr<VqaSessionManager> sessions,
+               std::shared_ptr<stt::SttSessionManager> stt_sessions,
+               std::shared_ptr<media::MediaSessionManager> media_sessions = nullptr);
     void run();
     void stop();
 
@@ -23,8 +27,10 @@ private:
     std::string bind_addr_;
     std::string web_root_;
     std::string openapi_path_;
-    std::shared_ptr<SessionManager> sessions_;
+    audio::MediaRelayConfig media_config_;
+    std::shared_ptr<VqaSessionManager> sessions_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
+    std::shared_ptr<media::MediaSessionManager> media_sessions_;
     std::thread thread_;
     bool running_ = false;
 };
