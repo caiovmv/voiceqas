@@ -197,7 +197,8 @@ FROM nvidia/cuda:12.9.2-cudnn-runtime-ubuntu22.04 AS cuda-libs
 # Stage 3: runtime mínimo
 # -----------------------------------------------------------------------------
 FROM debian:${DEBIAN_RUNTIME} AS runtime
-ARG VOICEQAS_STT_CUDA=0ARG GCC_VERSION
+ARG VOICEQAS_STT_CUDA=0
+ARG GCC_VERSION
 ARG CPP_STD
 ARG CMAKE_MIN_VERSION
 ARG VCPKG_BASELINE
