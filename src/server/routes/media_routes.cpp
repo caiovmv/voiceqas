@@ -14,7 +14,7 @@ namespace voiceqas::routes {
 void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
 
     if (ctx.media_sessions) {
-        server->Get("/v1/media/sessions", [ctx](const httplib::Request& req, httplib::Response& res) {
+        server.Get("/v1/media/sessions", [ctx](const httplib::Request& req, httplib::Response& res) {
             if (!check_ops_read_auth(req)) {
                 res.status = 401;
                 res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -35,7 +35,7 @@ void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
             res.set_content(nlohmann::json{{"status", "ok"}, {"sessions", sessions}}.dump(), "application/json");
         });
 
-        server->Post("/v1/media/sessions", [ctx](const httplib::Request& req, httplib::Response& res) {
+        server.Post("/v1/media/sessions", [ctx](const httplib::Request& req, httplib::Response& res) {
             if (!check_ops_write_auth(req)) {
                 res.status = 401;
                 res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -80,7 +80,7 @@ void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
             }
         });
 
-        server->Delete(R"(/v1/media/sessions/(.+))", [ctx](const httplib::Request& req, httplib::Response& res) {
+        server.Delete(R"(/v1/media/sessions/(.+))", [ctx](const httplib::Request& req, httplib::Response& res) {
             if (!check_ops_write_auth(req)) {
                 res.status = 401;
                 res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -101,7 +101,7 @@ void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
             res.set_content(R"({"status":"ok"})", "application/json");
         });
 
-        server->Post(R"(/v1/media/sessions/([^/]+)/agent-audio)", [ctx](const httplib::Request& req, httplib::Response& res) {
+        server.Post(R"(/v1/media/sessions/([^/]+)/agent-audio)", [ctx](const httplib::Request& req, httplib::Response& res) {
             if (!check_ops_write_auth(req)) {
                 res.status = 401;
                 res.set_content(R"({"error":"unauthorized"})", "application/json");

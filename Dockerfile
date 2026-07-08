@@ -234,9 +234,10 @@ WORKDIR /app
 
 COPY --from=builder /runtime/bin/voiceqas-server /usr/local/bin/voiceqas-server
 COPY --from=builder /runtime/lib/ /usr/local/lib/
+# POSIX sh aqui: o estágio runtime não herda o SHELL bash do builder.
 RUN --mount=type=bind,from=cuda-libs,source=/usr/local/cuda/lib64,target=/cuda-libs,readonly \
     --mount=type=bind,from=cuda-libs,source=/usr/lib/x86_64-linux-gnu,target=/cuda-gnu,readonly \
-    if [[ "${VOICEQAS_STT_CUDA}" == "1" ]]; then \
+    if [ "${VOICEQAS_STT_CUDA}" = "1" ]; then \
       mkdir -p /usr/local/cuda/lib64 && \
       cp -a /cuda-libs/. /usr/local/cuda/lib64/ && \
       cp -a /cuda-gnu/libcudnn*.so* /usr/local/cuda/lib64/; \

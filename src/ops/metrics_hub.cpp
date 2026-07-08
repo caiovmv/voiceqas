@@ -4,8 +4,10 @@
 
 #include "voiceqas/json_util.hpp"
 #include "voiceqas/ops/event_store.hpp"
+#include "voiceqas/ops/external_ai_service.hpp"
 #include "voiceqas/ops/pipeline_tracker.hpp"
 #include "voiceqas/ops/prometheus.hpp"
+#include "voiceqas/ops/transport_sankey.hpp"
 #include "voiceqas/ops/webhook.hpp"
 #include "voiceqas/stt/client.hpp"
 #include "voiceqas/stt/json_util.hpp"
@@ -73,8 +75,17 @@ void OpsMetricsHub::publish_event(nlohmann::json event) {
         const auto processing_ms = event.value("processing_ms", int64_t{0});
         const auto duration_ms = event.value("duration_ms", int64_t{0});
         const auto bytes = static_cast<uint64_t>(std::max<int64_t>(duration_ms, 0)) * 32;
+        const auto transport = event.value("transport", std::string{"websocket"});
+        const auto latency_ms = static_cast<double>(processing_ms);
         PipelineTracker::instance().record_asr(session_id, processing_ms, bytes);
         PipelineTracker::instance().record_ai_agent_inbound(session_id, bytes);
+        PipelineTracker::instance().record_transport_ingress(session_id, transport, bytes, latency_ms, 0.0);
+        PipelineTracker::instance().record_media_pipeline(
+            session_id, bytes, latency_ms, kPipelineDirectionInbound);
+        if (type == "stt_final") {
+            const auto text = event.value("text", std::string{});
+            ExternalAiService::instance().on_stt_final(session_id, text, bytes);
+        }
     }
 
     std::vector<JsonCallback> targets;
@@ -119,10 +130,14 @@ void OpsMetricsHub::publish(const std::string& session_id, const WindowMetrics& 
 void publish_stt_result(
     const std::string& session_id,
     const stt::TranscriptResult& result,
-    bool partial) {
+    bool partial,
+    const std::optional<std::string>& transport) {
     auto json = transcript_to_json(result);
     json["type"] = partial ? "stt_partial" : "stt_final";
     json["session_id"] = session_id;
+    if (transport) {
+        json["transport"] = *transport;
+    }
     OpsMetricsHub::instance().publish_event(std::move(json));
 }
 

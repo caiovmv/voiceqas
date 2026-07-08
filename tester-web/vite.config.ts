@@ -16,6 +16,16 @@ export default defineConfig({
         ws: true,
         rewrite: (p) => p.replace(/^\/ws/, ''),
       },
+      '/tempo': {
+        target: 'http://localhost:3200',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/tempo/, ''),
+      },
+      '/prometheus': {
+        target: 'http://localhost:9090',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/prometheus/, ''),
+      },
     },
   },
 });

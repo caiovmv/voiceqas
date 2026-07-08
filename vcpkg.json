@@ -10,7 +10,11 @@
     "cpp-httplib",
     "nlohmann-json",
     "yaml-cpp",
-    "bcg729"
+    "bcg729",
+    {
+      "name": "opentelemetry-cpp",
+      "features": ["otlp-grpc"]
+    }
   ],
   "features": {
     "test": {

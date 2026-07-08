@@ -10,7 +10,7 @@ namespace voiceqas::routes {
 
 void register_ops_routes(httplib::Server& server, const RouteContext& ctx) {
 
-    server->Get("/v1/ops/metrics/history", [](const httplib::Request& req, httplib::Response& res) {
+    server.Get("/v1/ops/metrics/history", [](const httplib::Request& req, httplib::Response& res) {
         if (!check_ops_read_auth(req)) {
             res.status = 401;
             res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -36,7 +36,7 @@ void register_ops_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(nlohmann::json{{"status", "ok"}, {"events", out}}.dump(), "application/json");
     });
 
-    server->Get("/v1/ops/alerts", [](const httplib::Request& req, httplib::Response& res) {
+    server.Get("/v1/ops/alerts", [](const httplib::Request& req, httplib::Response& res) {
         if (!check_ops_read_auth(req)) {
             res.status = 401;
             res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -58,7 +58,7 @@ void register_ops_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(nlohmann::json{{"status", "ok"}, {"alerts", out}}.dump(), "application/json");
     });
 
-    server->Get("/v1/ops/pipeline/snapshot", [](const httplib::Request& req, httplib::Response& res) {
+    server.Get("/v1/ops/pipeline/snapshot", [](const httplib::Request& req, httplib::Response& res) {
         if (!check_ops_read_auth(req)) {
             res.status = 401;
             res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -71,7 +71,7 @@ void register_ops_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(snapshot.dump(), "application/json");
     });
 
-    server->Get("/v1/ops/pipeline/sessions", [](const httplib::Request& req, httplib::Response& res) {
+    server.Get("/v1/ops/pipeline/sessions", [](const httplib::Request& req, httplib::Response& res) {
         if (!check_ops_read_auth(req)) {
             res.status = 401;
             res.set_content(R"({"error":"unauthorized"})", "application/json");

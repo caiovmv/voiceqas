@@ -55,6 +55,15 @@ ops:
   partial_stt_interval_ms: 3000
   partial_stt_window_ms: 5000
   partial_stt_min_buffer_ms: 3000
-  # admin_token: "change-me"
-  # read_token: "read-only"
-  # write_token: "write-only"
+# AI externa (Ollama no host) — fim do Sankey inbound / início do outbound
+external_ai:
+  enabled: false
+  provider: ollama
+  base_url: "http://host.docker.internal:11434"
+  model: "cryptidbleh/gemma4-claude-sonnet-4.6"
+  timeout_ms: 60000
+  # Após stt_final: POST /api/chat → resposta texto → (opcional TTS) → agent PCM out
+tracing:
+  enabled: true
+  otlp_endpoint: "http://alloy:4317"
+  service_name: "voiceqas"

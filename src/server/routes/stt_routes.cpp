@@ -6,6 +6,7 @@
 #include "voiceqas/stt/json_util.hpp"
 #include "voiceqas/stt/model_util.hpp"
 #include "voiceqas/stt/vad_model.hpp"
+#include "voiceqas/server/grpc_playground_client.hpp"
 #include "voiceqas/wav.hpp"
 
 #include <cstring>
@@ -14,7 +15,7 @@ namespace voiceqas::routes {
 
 void register_stt_routes(httplib::Server& server, const RouteContext& ctx) {
 
-    server->Get("/v1/stt/ready", [ctx](const httplib::Request&, httplib::Response& res) {
+    server.Get("/v1/stt/ready", [ctx](const httplib::Request&, httplib::Response& res) {
         nlohmann::json models = nlohmann::json::array();
         std::string status = "unavailable";
         std::string language = "pt";
@@ -74,7 +75,7 @@ void register_stt_routes(httplib::Server& server, const RouteContext& ctx) {
         }.dump(), "application/json");
     });
 
-    server->Post("/v1/stt/vad/model", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/stt/vad/model", [ctx](const httplib::Request& req, httplib::Response& res) {
         if (!check_ops_write_auth(req)) {
             res.status = 401;
             res.set_content(R"({"error":"unauthorized"})", "application/json");
@@ -112,7 +113,7 @@ void register_stt_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/stt/transcribe", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/stt/transcribe", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             if (!ctx.stt_sessions) {
                 res.status = 503;
@@ -157,7 +158,7 @@ void register_stt_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/stt/transcribe/segment", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/stt/transcribe/segment", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             if (!ctx.stt_sessions) {
                 res.status = 503;
@@ -189,7 +190,7 @@ void register_stt_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/playground/grpc/stt-transcribe", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/playground/grpc/stt-transcribe", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             if (!ctx.stt_sessions) {
                 res.status = 503;
@@ -197,24 +198,14 @@ void register_stt_routes(httplib::Server& server, const RouteContext& ctx) {
                 return;
             }
             const auto body = nlohmann::json::parse(req.body);
-            const auto format = format_from_json(body);
-            const int sample_rate = body.value("sample_rate", sample_rate_for_format(format));
-            auto payload = decode_payload_json(body);
-
-            const auto options = stt::transcribe_options_from_request(req, ctx.stt_sessions->config(), &body);
-
-            const auto result = ctx.stt_sessions->transcribe_batch(
-                format,
-                std::span<const uint8_t>(payload.data(), payload.size()),
-                sample_rate,
-                options);
-
-            if (!result.ok) {
+            auto options = stt::transcribe_options_from_request(req, ctx.stt_sessions->config(), &body);
+            // Force real gRPC hop so Beyla (:50051) + OTel "gRPC …" spans appear in RED/APM.
+            const auto target = ctx.grpc_target.empty() ? "127.0.0.1:50051" : ctx.grpc_target;
+            const auto out = server::grpc_stt_transcribe_via_client(target, body, options);
+            if (!out.value("ok", false)) {
                 res.status = 502;
-                res.set_content(nlohmann::json{{"error", result.error}}.dump(), "application/json");
-                return;
             }
-            res.set_content(transcript_to_json(result).dump(), "application/json");
+            res.set_content(out.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
             res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");

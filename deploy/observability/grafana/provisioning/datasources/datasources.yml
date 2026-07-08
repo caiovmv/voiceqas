@@ -7,6 +7,10 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    jsonData:
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
 
   - name: Loki
     uid: loki
@@ -24,12 +28,26 @@ datasources:
         datasourceUid: loki
         spanStartTimeShift: "-1m"
         spanEndTimeShift: "1m"
+        filterByTraceID: true
+        customQuery: true
+        query: '{container=~"voiceqas.*"} |= "$${__trace.traceId}"'
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: "-1m"
+        spanEndTimeShift: "1m"
+        tags:
+          - key: service.name
+            value: service
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
       lokiSearch:
         datasourceUid: loki
 
   - name: VoiceQAS API
     uid: voiceqas-api
-    type: marcusolsson-json-datasource
+    type: yesoreyeram-infinity-datasource
     access: proxy
     url: http://voiceqas:8080
     jsonData:

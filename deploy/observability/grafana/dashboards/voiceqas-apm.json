@@ -1,0 +1,324 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Explore (all traces)",
+      "type": "link",
+      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22queryType%22%3A%22traceqlSearch%22%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22voiceqas%5C%22%20%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-6h%22%2C%22to%22%3A%22now%22%7D%7D%7D&orgId=1"
+    },
+    {
+      "title": "Command Center APM",
+      "type": "link",
+      "url": "http://localhost:3000/#command-center",
+      "icon": "external link"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "description": "Clique em Hora, Rota ou Duração para carregar o waterfall abaixo. Ou use o campo Trace ID no topo.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "links": [
+            {
+              "title": "Ver trace",
+              "url": "/d/voiceqas-apm/voiceqas-apm?orgId=1&var-traceId=${__data.fields.traceID}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "nested" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "spanID" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "traceID" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ver trace",
+                    "url": "/d/voiceqas-apm/voiceqas-apm?orgId=1&var-traceId=${__value.raw}&${__url_time_range}"
+                  },
+                  {
+                    "title": "Abrir no Explore",
+                    "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22queryType%22%3A%22traceId%22%2C%22query%22%3A%22${__value.raw}%22%7D%5D%7D%7D&orgId=1",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "startTime" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "traceDuration" },
+            "properties": [{ "id": "unit", "value": "ms" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "startTime" }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "limit": 50,
+          "query": "{ resource.service.name = \"voiceqas\" && name !~ \".*/(health|ready|metrics)\" }",
+          "queryType": "traceql",
+          "refId": "A",
+          "tableType": "traces"
+        }
+      ],
+      "title": "Recent traces",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "description": "Waterfall do trace selecionado. Clique em um span para ver atributos no painel lateral do Grafana.",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 10 },
+      "id": 7,
+      "options": {
+        "showSpanFilters": false,
+        "showTime": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "query": "${traceId}",
+          "queryType": "traceId",
+          "refId": "A"
+        }
+      ],
+      "title": "Trace waterfall — ${traceId}",
+      "type": "traces"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "description": "Spans do trace selecionado com duração e nome da operação.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "traceIdHidden" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "duration" },
+            "properties": [{ "id": "unit", "value": "ms" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "time" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "query": "{ trace:id = \"${traceId}\" }",
+          "queryType": "traceql",
+          "refId": "A",
+          "tableType": "spans"
+        }
+      ],
+      "title": "Spans — ${traceId}",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"voiceqas\",http_route!~\"/health|/ready|/metrics\"}[1m])) + sum(rate({__name__=~\"rpc_server_duration_seconds_count|rpc_client_duration_seconds_count\",job=\"beyla\",service_name=\"voiceqas\",rpc_method!=\"\",rpc_method!=\"*\"}[1m])) + sum(rate(traces_spanmetrics_calls_total{service_name=\"voiceqas\",span_name!~\".*/(health|ready|metrics)|GET /health|GET /metrics|GET /ready\",span_name=~\"WS .*|gRPC .*\"}[1m]))",
+          "legendFormat": "Total",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"voiceqas\",server_port=\"8080\",http_route!~\"/health|/ready|/metrics\"}[1m]))",
+          "legendFormat": "REST :8080",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"voiceqas\",server_port=\"8081\",http_route!~\"/health|/ready|/metrics\"}[1m]))",
+          "legendFormat": "WS Beyla :8081",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(traces_spanmetrics_calls_total{service_name=\"voiceqas\",span_name=~\"WS .*\",span_name!~\".*/(health|ready|metrics)\"}[1m]))",
+          "legendFormat": "WS OTel",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(rate({__name__=~\"rpc_server_duration_seconds_count|rpc_client_duration_seconds_count\",job=\"beyla\",service_name=\"voiceqas\",rpc_method!=\"\",rpc_method!=\"*\"}[1m]))",
+          "legendFormat": "gRPC Beyla",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(traces_spanmetrics_calls_total{service_name=\"voiceqas\",span_name=~\"gRPC .*\"}[1m]))",
+          "legendFormat": "gRPC OTel",
+          "refId": "F"
+        }
+      ],
+      "title": "Request rate — REST / WS / gRPC",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"voiceqas\",server_port=\"8080\",http_route!~\"/health|/ready|/metrics\",http_response_status_code!~\"101\"}[5m])) by (le))",
+          "legendFormat": "REST P95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"voiceqas\",server_port=\"8081\",http_route!~\"/health|/ready|/metrics\"}[5m])) by (le))",
+          "legendFormat": "WS Beyla P95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{service_name=\"voiceqas\",span_name=~\"WS .*\",span_name!~\".*/(health|ready|metrics)\"}[5m])) by (le))",
+          "legendFormat": "WS OTel P95",
+          "refId": "C"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate({__name__=~\"rpc_server_duration_seconds_bucket|rpc_client_duration_seconds_bucket\",job=\"beyla\",service_name=\"voiceqas\",rpc_method!=\"\",rpc_method!=\"*\"}[5m])) by (le))",
+          "legendFormat": "gRPC Beyla P95",
+          "refId": "D"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{service_name=\"voiceqas\",span_name=~\"gRPC .*\"}[5m])) by (le))",
+          "legendFormat": "gRPC OTel P95",
+          "refId": "E"
+        }
+      ],
+      "title": "Latency P95 — REST / WS / gRPC",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"voiceqas\",server_port=\"8081\",http_response_status_code=\"101\",http_route!~\"/health|/ready|/metrics\"}[1m]))",
+          "legendFormat": "WS upgrades 101",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"voiceqas\",server_port=\"8081\",http_response_status_code=\"101\",http_route!~\"/health|/ready|/metrics\"}[5m])) by (le))",
+          "legendFormat": "Upgrade P95",
+          "refId": "B"
+        }
+      ],
+      "title": "WebSocket upgrades (101)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 40 },
+      "id": 5,
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "up{job=\"beyla\"}", "refId": "A" }],
+      "title": "Beyla",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 40 },
+      "id": 6,
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"voiceqas\",http_response_status_code=~\"5..\",http_route!~\"/health|/ready|/metrics\"}[5m]))",
+          "legendFormat": "HTTP 5xx",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate({__name__=~\"rpc_server_duration_seconds_count|rpc_client_duration_seconds_count\",job=\"beyla\",service_name=\"voiceqas\",rpc_method!=\"\",rpc_method!=\"*\",rpc_grpc_status_code!~\"0|OK\"}[5m]))",
+          "legendFormat": "gRPC err",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(traces_spanmetrics_calls_total{service_name=\"voiceqas\",span_name=~\"WS .*|gRPC .*\",status_code=\"STATUS_CODE_ERROR\"}[5m]))",
+          "legendFormat": "OTel err",
+          "refId": "C"
+        }
+      ],
+      "title": "Error rate (5xx / gRPC / OTel)",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["voiceqas", "apm"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "", "value": "" },
+        "hide": 0,
+        "label": "Trace ID",
+        "name": "traceId",
+        "options": [{ "selected": true, "text": "", "value": "" }],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "VoiceQAS APM",
+  "uid": "voiceqas-apm",
+  "version": 7
+}

@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <iostream>
 #include <memory>
@@ -8,12 +9,15 @@
 #include "voiceqas/config.hpp"
 #include "voiceqas/media/session.hpp"
 #include "voiceqas/ops/adapters/ops_ports.hpp"
+#include "voiceqas/ops/external_ai_config.hpp"
 #include "voiceqas/server/grpc_server.hpp"
+#include "voiceqas/server/grpc_playground_client.hpp"
 #include "voiceqas/server/media_relay.hpp"
 #include "voiceqas/server/rest_server.hpp"
 #include "voiceqas/server/ws_server.hpp"
 #include "voiceqas/stt/client.hpp"
 #include "voiceqas/stt/session_manager.hpp"
+#include "voiceqas/tracing/tracing.hpp"
 
 namespace {
 
@@ -30,6 +34,8 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, on_signal);
 
     const auto app_cfg = voiceqas::load_app_config(argc, argv);
+    voiceqas::tracing::init(app_cfg.tracing);
+    voiceqas::ops::configure_external_ai(app_cfg.external_ai);
     auto metrics = voiceqas::ops::make_ops_metrics_publisher();
     auto telemetry = voiceqas::ops::make_ops_pipeline_telemetry();
     auto sessions = std::make_shared<voiceqas::VqaSessionManager>(
@@ -55,7 +61,8 @@ int main(int argc, char** argv) {
         app_cfg.media,
         sessions,
         stt_sessions,
-        media_sessions);
+        media_sessions,
+        voiceqas::server::local_grpc_target(app_cfg.server.grpc_addr));
     voiceqas::WebSocketServer ws(app_cfg.server.ws_addr, sessions, stt_sessions);
 
     std::unique_ptr<voiceqas::MediaRelayServer> media_relay;
@@ -81,13 +88,15 @@ int main(int argc, char** argv) {
         media_relay->run();
     }
 
-    rest.run();
-    ws.run();
-
     std::thread grpc_thread([&app_cfg, sessions, stt_sessions, media_sessions]() {
         voiceqas::GrpcServer grpc(app_cfg.server.grpc_addr, sessions, stt_sessions, media_sessions);
         grpc.run();
     });
+    // Allow gRPC listener to bind before REST playground clients connect.
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    rest.run();
+    ws.run();
 
     const auto ready = stt_engine->ready_status();
     std::cout << "voiceqas started\n"
@@ -113,6 +122,8 @@ int main(int argc, char** argv) {
     if (grpc_thread.joinable()) {
         grpc_thread.join();
     }
+
+    voiceqas::tracing::shutdown();
 
     return 0;
 }

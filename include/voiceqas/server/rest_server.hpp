@@ -19,7 +19,8 @@ public:
                audio::MediaRelayConfig media_config,
                std::shared_ptr<VqaSessionManager> sessions,
                std::shared_ptr<stt::SttSessionManager> stt_sessions,
-               std::shared_ptr<media::MediaSessionManager> media_sessions = nullptr);
+               std::shared_ptr<media::MediaSessionManager> media_sessions = nullptr,
+               std::string grpc_target = "127.0.0.1:50051");
     void run();
     void stop();
 
@@ -27,6 +28,7 @@ private:
     std::string bind_addr_;
     std::string web_root_;
     std::string openapi_path_;
+    std::string grpc_target_;
     audio::MediaRelayConfig media_config_;
     std::shared_ptr<VqaSessionManager> sessions_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;

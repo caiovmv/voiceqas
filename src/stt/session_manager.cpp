@@ -247,6 +247,13 @@ TranscriptResult SttSessionManager::flush(const std::string& session_id, Transcr
         sessions_.erase(it);
     }
 
+    if (pcm.empty()) {
+        TranscriptResult empty;
+        empty.ok = false;
+        empty.error = "no audio buffered for flush";
+        return empty;
+    }
+
     if (options.language.empty() && session_options.language.empty()) {
         options.language = default_options_.language;
     } else if (options.language.empty()) {
@@ -254,6 +261,9 @@ TranscriptResult SttSessionManager::flush(const std::string& session_id, Transcr
     }
     if (options.model == SttModelChoice::Auto && session_options.model != SttModelChoice::Auto) {
         options.model = session_options.model;
+    }
+    if (!options.provider && session_options.provider) {
+        options.provider = session_options.provider;
     }
     options.telemetry_session_id = session_id;
 

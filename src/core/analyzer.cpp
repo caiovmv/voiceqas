@@ -1,5 +1,7 @@
 #include "voiceqas/analyzer.hpp"
 
+#include "voiceqas/tracing/tracing.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -289,21 +291,29 @@ std::optional<WindowMetrics> VqaSessionManager::push_frame(
     }
 
     const auto decode_started = std::chrono::steady_clock::now();
+    tracing::StageSpan decode_span("decode_vqa", "Decode VQA", session_id);
+    decode_span.set_bytes_in(payload.size());
     const auto decoded = audio::decode_to_pcm(format, payload, &(*session.rtp));
     const auto decode_ms = std::chrono::duration<double, std::milli>(
                                std::chrono::steady_clock::now() - decode_started)
                                .count();
+    decode_span.set_metric("voiceqas.duration_ms", decode_ms);
     if (!decoded.ok) {
         return std::nullopt;
     }
+    decode_span.set_bytes_out(decoded.pcm.size() * sizeof(int16_t));
 
     auto pcm = std::move(decoded.pcm);
     double agc_ms = 0.0;
     if (audio_config_.normalize_enabled && !pcm.empty()) {
+        tracing::StageSpan agc_span("agc_vqa", "AGC Normalize", session_id);
+        agc_span.set_bytes_in(pcm.size() * sizeof(int16_t));
         const auto agc_started = std::chrono::steady_clock::now();
         session.agc.process_inplace(pcm, rate);
         agc_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - agc_started)
                      .count();
+        agc_span.set_metric("voiceqas.duration_ms", agc_ms);
+        agc_span.set_bytes_out(pcm.size() * sizeof(int16_t));
     }
     telemetry_->record_rtp_ingress(
         session_id,
@@ -320,7 +330,11 @@ std::optional<WindowMetrics> VqaSessionManager::push_frame(
         decoded.rtp_stats.packet_loss_pct);
     session.analyzer->set_rtp_metrics(decoded.rtp_stats.packet_loss_pct, decoded.rtp_stats.jitter_ms);
 
+    tracing::StageSpan vqa_span("vqa", "VQA Analyzer", session_id);
+    vqa_span.set_bytes_in(pcm.size() * sizeof(int16_t));
     if (auto report = session.analyzer->push_pcm(pcm, timestamp_ms)) {
+        vqa_span.set_metric("voiceqas.composite_score", report->composite_score);
+        vqa_span.set_metric("voiceqas.stt_ready", report->stt_ready ? int64_t{1} : int64_t{0});
         metrics_->publish_vqa(session_id, *report);
         return report;
     }

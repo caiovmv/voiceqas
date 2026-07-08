@@ -8,18 +8,22 @@
 #include <boost/beast/websocket.hpp>
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "voiceqas/json_util.hpp"
 #include "voiceqas/ops/metrics_hub.hpp"
 #include "voiceqas/stt/json_util.hpp"
 #include "voiceqas/stt/model_util.hpp"
+#include "voiceqas/tracing/tracing.hpp"
 
 namespace voiceqas {
 namespace beast = boost::beast;
@@ -46,7 +50,19 @@ struct WsSessionConfig {
     int sample_rate = 8000;
     int64_t timestamp_ms = 0;
     bool ready = false;
+    std::map<std::string, std::string> trace_headers;
 };
+
+std::map<std::string, std::string> capture_trace_headers(const http::request<http::string_body>& req) {
+    std::map<std::string, std::string> out;
+    for (const auto& field : req) {
+        const std::string name = std::string(field.name_string());
+        if (name == "traceparent" || name == "tracestate") {
+            out[name] = std::string(field.value());
+        }
+    }
+    return out;
+}
 
 std::string target_path(const http::request<http::string_body>& req) {
     const auto target = std::string(req.target());
@@ -60,6 +76,7 @@ public:
         : ws_(std::move(socket)), sessions_(std::move(sessions)) {}
 
     void accept(http::request<http::string_body> req) {
+        config_.trace_headers = capture_trace_headers(req);
         ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
         ws_.set_option(websocket::stream_base::decorator(
             [](websocket::response_type& res) {
@@ -115,6 +132,7 @@ private:
         }
 
         std::vector<uint8_t> payload(data.begin(), data.end());
+        tracing::RequestScope scope("WS /v1/stream", config_.trace_headers, config_.session_id);
         if (auto report = sessions_->push_frame(
                 config_.session_id,
                 config_.format,
@@ -286,7 +304,12 @@ public:
         : ws_(std::move(socket)), stt_sessions_(std::move(stt_sessions)) {}
 
     void accept(http::request<http::string_body> req) {
-        ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
+        config_.trace_headers = capture_trace_headers(req);
+        websocket::stream_base::timeout stt_timeout;
+        stt_timeout.handshake_timeout = std::chrono::seconds(30);
+        stt_timeout.idle_timeout = std::chrono::minutes(10);
+        stt_timeout.keep_alive_pings = true;
+        ws_.set_option(stt_timeout);
         ws_.set_option(websocket::stream_base::decorator(
             [](websocket::response_type& res) {
                 res.set(http::field::server, "voiceqas");
@@ -306,9 +329,60 @@ private:
         ws_.async_read(buffer_, beast::bind_front_handler(&SttWsSession::on_read, shared_from_this()));
     }
 
+    void send_json(std::string payload) {
+        ws_.text(true);
+        ws_.async_write(
+            net::buffer(payload),
+            beast::bind_front_handler(&SttWsSession::on_write, shared_from_this()));
+    }
+
+    void handle_flush(stt::TranscribeOptions options) {
+        if (flushing_.exchange(true)) {
+            send_json(R"({"type":"error","ok":false,"error":"flush already in progress"})");
+            return;
+        }
+
+        const auto session_id = config_.session_id;
+        auto stt = stt_sessions_;
+        auto executor = ws_.get_executor();
+
+        std::thread([self = shared_from_this(), session_id, options = std::move(options), stt, executor, trace_headers = config_.trace_headers]() mutable {
+            tracing::RequestScope scope("WS /v1/stt/stream flush", trace_headers, session_id);
+            nlohmann::json out;
+            try {
+                const auto result = stt->flush_and_publish(session_id, options, false);
+                out = transcript_to_json(result);
+                out["session_id"] = session_id;
+                out["type"] = result.ok ? "final" : "error";
+            } catch (const std::exception& e) {
+                out = {
+                    {"type", "error"},
+                    {"ok", false},
+                    {"session_id", session_id},
+                    {"error", e.what()},
+                };
+            }
+
+            const auto payload = std::make_shared<std::string>(out.dump());
+            net::post(executor, [self, payload]() {
+                self->flushing_ = false;
+                if (!self->ws_.next_layer().is_open()) {
+                    if (self->config_.ready) {
+                        self->stt_sessions_->remove_session(self->config_.session_id);
+                    }
+                    return;
+                }
+                self->ws_.text(true);
+                self->ws_.async_write(
+                    net::buffer(*payload),
+                    beast::bind_front_handler(&SttWsSession::on_write, self));
+            });
+        }).detach();
+    }
+
     void on_read(beast::error_code ec, std::size_t) {
         if (ec == websocket::error::closed) {
-            if (config_.ready) {
+            if (config_.ready && !flushing_.load()) {
                 stt_sessions_->remove_session(config_.session_id);
             }
             return;
@@ -367,23 +441,24 @@ private:
                     if (json.contains("language")) {
                         options.language = json.at("language").get<std::string>();
                     }
-                    const auto result = stt_sessions_->flush_and_publish(config_.session_id, options, false);
-                    auto out = transcript_to_json(result);
-                    out["session_id"] = config_.session_id;
-                    out["type"] = result.ok ? "final" : "error";
-                    const auto payload = out.dump();
-                    ws_.text(true);
-                    ws_.async_write(net::buffer(payload),
-                                    beast::bind_front_handler(&SttWsSession::on_write, shared_from_this()));
+                    if (json.contains("provider")) {
+                        options.provider = json.at("provider").get<std::string>();
+                    }
+                    handle_flush(std::move(options));
+                    do_read();
                     return;
                 }
-            } catch (...) {
+            } catch (const std::exception& e) {
+                send_json(std::string(R"({"type":"error","ok":false,"error":")") + e.what() + R"("})");
+                do_read();
+                return;
             }
             do_read();
             return;
         }
 
         std::vector<uint8_t> payload(data.begin(), data.end());
+        tracing::RequestScope scope("WS /v1/stt/stream", config_.trace_headers, config_.session_id);
         stt_sessions_->append_chunk(
             config_.session_id,
             config_.format,
@@ -403,6 +478,7 @@ private:
     beast::flat_buffer buffer_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
     WsSessionConfig config_;
+    std::atomic<bool> flushing_{false};
 };
 
 class HttpUpgradeSession : public std::enable_shared_from_this<HttpUpgradeSession> {

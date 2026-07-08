@@ -1,5 +1,7 @@
 #include "voiceqas/stt/audio_prepare.hpp"
 
+#include "voiceqas/tracing/tracing.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -37,30 +39,42 @@ PreparedAudio prepare_audio_for_stt(
     }
 
     const auto decode_started = std::chrono::steady_clock::now();
+    tracing::StageSpan decode_span("decode_stt", "Decode STT");
+    decode_span.set_bytes_in(payload.size());
     const auto decoded = audio::decode_to_pcm(format, payload, depacketizer_ptr);
     prepared.decode_ms = std::chrono::duration<double, std::milli>(
                              std::chrono::steady_clock::now() - decode_started)
                              .count();
+    decode_span.set_metric("voiceqas.duration_ms", prepared.decode_ms);
     if (!decoded.ok) {
         return prepared;
     }
+    decode_span.set_bytes_out(decoded.pcm.size() * sizeof(int16_t));
 
     auto pcm = decoded.pcm;
     if (audio_config.normalize_enabled && !pcm.empty()) {
+        tracing::StageSpan agc_span("agc_stt", "AGC STT");
+        agc_span.set_bytes_in(pcm.size() * sizeof(int16_t));
         const auto agc_started = std::chrono::steady_clock::now();
         audio::AgcState agc(audio_config);
         agc.process_inplace(pcm, rate);
         prepared.agc_ms = std::chrono::duration<double, std::milli>(
                               std::chrono::steady_clock::now() - agc_started)
                               .count();
+        agc_span.set_metric("voiceqas.duration_ms", prepared.agc_ms);
+        agc_span.set_bytes_out(pcm.size() * sizeof(int16_t));
     }
 
+    tracing::StageSpan resample_span("resample_16k", "Resample 16 kHz");
+    resample_span.set_bytes_in(pcm.size() * sizeof(int16_t));
     const auto resample_started = std::chrono::steady_clock::now();
     prepared.sample_rate = target_sample_rate;
     prepared.pcm = resample_pcm16(pcm, rate, target_sample_rate);
     prepared.resample_ms = std::chrono::duration<double, std::milli>(
                                std::chrono::steady_clock::now() - resample_started)
                                .count();
+    resample_span.set_metric("voiceqas.duration_ms", prepared.resample_ms);
+    resample_span.set_bytes_out(prepared.pcm.size() * sizeof(int16_t));
     return prepared;
 }
 

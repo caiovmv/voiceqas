@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AsrMetricsPanel } from './components/command-center/AsrMetricsPanel';
 import { AlertsBar } from './components/command-center/AlertsBar';
 import { AuthPanel } from './components/command-center/AuthPanel';
 import { HealthStrip } from './components/command-center/HealthStrip';
 import { HistoryPanel } from './components/command-center/HistoryPanel';
 import { MediaSessionPanel } from './components/command-center/MediaSessionPanel';
+import { PipelinePanel } from './components/command-center/PipelinePanel';
+import { ApmPanel } from './components/command-center/ApmPanel';
+import { RedMetricsPanel } from './components/command-center/RedMetricsPanel';
 import { VadPanel } from './components/command-center/VadPanel';
 import { SessionGrid } from './components/command-center/SessionGrid';
 import { useOpsStream } from './hooks/useOpsStream';
+import { usePipelineSnapshot } from './hooks/usePipelineSnapshot';
 import { useServiceHealth } from './hooks/useServiceHealth';
 import { listMediaSessions } from './lib/api';
 import { ensureDefaultOpsToken } from './lib/auth';
@@ -18,6 +23,7 @@ export function CommandCenterApp() {
   const rootRef = useRef<HTMLDivElement>(null);
   const health = useServiceHealth(5000);
   const [filterSessionId, setFilterSessionId] = useState('');
+  const [pipelineSessionId, setPipelineSessionId] = useState('');
   const [sessions, setSessions] = useState<Map<string, TrackedSession>>(new Map());
   const [opsStatus, setOpsStatus] = useState('Desconectado');
   const [opsConnected, setOpsConnected] = useState(false);
@@ -54,11 +60,21 @@ export function CommandCenterApp() {
     });
   }, []);
 
+  const { snapshot, error, loading, applyWsSnapshot } = usePipelineSnapshot({
+    sessionId: pipelineSessionId || undefined,
+    pollMs: 3000,
+  });
+
+  const onPipelineSnapshot = useCallback((data: import('./lib/types').PipelineSnapshot) => {
+    applyWsSnapshot(data);
+  }, [applyWsSnapshot]);
+
   const { connect, disconnect, connected } = useOpsStream({
     filterSessionId: filterSessionId.trim() || undefined,
     onVqaWindow,
     onSttEvent,
     onAlert,
+    onPipelineSnapshot,
     onStatus: setOpsStatus,
     autoReconnect: true,
   });
@@ -163,6 +179,16 @@ export function CommandCenterApp() {
 
       <AuthPanel />
       <HealthStrip health={health} />
+      <PipelinePanel
+        snapshot={snapshot}
+        loading={loading}
+        error={error}
+        sessionFilter={pipelineSessionId}
+        onSessionFilterChange={setPipelineSessionId}
+      />
+      <AsrMetricsPanel sessions={sessionList} filterSessionId={filterSessionId.trim() || undefined} />
+      <RedMetricsPanel />
+      <ApmPanel />
       <VadPanel />
       <AlertsBar alerts={alerts} />
 

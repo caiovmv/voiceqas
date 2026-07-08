@@ -3,11 +3,13 @@
 #include <grpcpp/grpcpp.h>
 
 #include <cstring>
+#include <map>
 #include <memory>
 
 #include "voiceqas/media/session.hpp"
 #include "voiceqas/metrics.hpp"
 #include "voiceqas/server/grpc_mappers.hpp"
+#include "voiceqas/tracing/tracing.hpp"
 #include "voiceqas/stt/json_util.hpp"
 #include "voiceqas/stt/model_util.hpp"
 #include "media.grpc.pb.h"
@@ -26,6 +28,30 @@ using server::audio_format_to_proto;
 using server::fill_stt_event;
 using server::fill_stt_response;
 using server::quality_report_to_proto;
+
+std::map<std::string, std::string> grpc_carrier(const grpc::ServerContext* context) {
+    std::map<std::string, std::string> out;
+    if (!context) {
+        return out;
+    }
+    for (const auto& pair : context->client_metadata()) {
+        out.emplace(std::string(pair.first.data(), pair.first.size()),
+                    std::string(pair.second.data(), pair.second.size()));
+    }
+    return out;
+}
+
+std::string metadata_value(const grpc::ServerContext* context, const char* key) {
+    if (!context) {
+        return {};
+    }
+    const auto& md = context->client_metadata();
+    auto it = md.find(key);
+    if (it == md.end()) {
+        return {};
+    }
+    return std::string(it->second.data(), it->second.size());
+}
 
 class VoiceQualityServiceImpl final : public voiceqas::v1::VoiceQualityService::Service {
 public:
@@ -47,6 +73,10 @@ public:
             if (context->IsCancelled()) {
                 return grpc::Status::CANCELLED;
             }
+            tracing::RequestScope scope(
+                "gRPC VoiceQualityService/AnalyzeStream",
+                grpc_carrier(context),
+                frame.session_id());
             const auto payload = frame.payload();
             const auto format = audio_format_from_proto(frame.format());
             if (auto report = sessions_->push_frame(
@@ -60,9 +90,10 @@ public:
         return grpc::Status::OK;
     }
 
-    grpc::Status AnalyzeBatch(grpc::ServerContext*,
+    grpc::Status AnalyzeBatch(grpc::ServerContext* context,
                               const voiceqas::v1::BatchRequest* request,
                               voiceqas::v1::BatchResponse* response) override {
+        tracing::RequestScope scope("gRPC VoiceQualityService/AnalyzeBatch", grpc_carrier(context));
         const auto format = audio_format_from_proto(request->format());
         const int sample_rate = request->sample_rate() > 0
             ? request->sample_rate()
@@ -95,8 +126,9 @@ public:
     explicit SpeechToTextServiceImpl(std::shared_ptr<stt::SttSessionManager> stt_sessions)
         : stt_sessions_(std::move(stt_sessions)) {}
 
-    grpc::Status Ready(grpc::ServerContext*, const voiceqas::v1::SttReadyRequest*,
+    grpc::Status Ready(grpc::ServerContext* context, const voiceqas::v1::SttReadyRequest*,
                        voiceqas::v1::SttReadyResponse* response) override {
+        tracing::RequestScope scope("gRPC SpeechToTextService/Ready", grpc_carrier(context));
         const auto ready = stt_sessions_ ? stt_sessions_->engine().ready_status() : stt::SttReadyStatus{};
         response->set_status(ready.ready() ? "ready" : "unavailable");
         response->set_service("voiceqas-stt");
@@ -105,9 +137,14 @@ public:
         return grpc::Status::OK;
     }
 
-    grpc::Status Transcribe(grpc::ServerContext*,
+    grpc::Status Transcribe(grpc::ServerContext* context,
                             const voiceqas::v1::SttTranscribeRequest* request,
                             voiceqas::v1::SttTranscribeResponse* response) override {
+        const auto session_id = metadata_value(context, "x-session-id");
+        tracing::RequestScope scope(
+            "gRPC SpeechToTextService/Transcribe",
+            grpc_carrier(context),
+            session_id);
         if (!stt_sessions_) {
             response->set_error("STT not configured");
             return grpc::Status::OK;
@@ -123,6 +160,12 @@ public:
             options.model = stt::parse_model_choice(request->model(), options.model);
         } else {
             options.model = stt::parse_model_choice(stt_sessions_->config().default_model, stt::SttModelChoice::Auto);
+        }
+        if (const auto provider = metadata_value(context, "x-stt-provider"); !provider.empty()) {
+            options.provider = provider;
+        }
+        if (!session_id.empty()) {
+            options.telemetry_session_id = session_id;
         }
         const auto result = stt_sessions_->transcribe_batch(
             format,
@@ -149,6 +192,11 @@ public:
             if (context->IsCancelled()) {
                 return grpc::Status::CANCELLED;
             }
+            tracing::RequestScope scope(
+                chunk.flush() ? "gRPC SpeechToTextService/TranscribeStream flush"
+                              : "gRPC SpeechToTextService/TranscribeStream",
+                grpc_carrier(context),
+                chunk.session_id());
 
             const auto& payload = chunk.payload();
             const auto format = audio_format_from_proto(chunk.format());

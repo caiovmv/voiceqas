@@ -49,6 +49,10 @@ private:
     std::unordered_map<ListenerId, Listener> listeners_;
 };
 
-void publish_stt_result(const std::string& session_id, const stt::TranscriptResult& result, bool partial);
+void publish_stt_result(
+    const std::string& session_id,
+    const stt::TranscriptResult& result,
+    bool partial,
+    const std::optional<std::string>& transport = std::nullopt);
 
 }  // namespace voiceqas::ops

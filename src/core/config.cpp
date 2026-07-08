@@ -7,6 +7,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "voiceqas/ops/config.hpp"
+#include "voiceqas/ops/external_ai_config.hpp"
 
 namespace voiceqas {
 
@@ -120,6 +121,33 @@ void apply_ops_env(ops::OpsConfig& ops) {
     }
 }
 
+void apply_external_ai_env(ops::ExternalAiConfig& cfg) {
+    if (const char* v = std::getenv("VOICEQAS_EXTERNAL_AI_ENABLED")) {
+        cfg.enabled = std::string(v) != "0" && std::string(v) != "false";
+    }
+    if (const char* v = std::getenv("VOICEQAS_EXTERNAL_AI_BASE_URL")) {
+        cfg.base_url = v;
+    }
+    if (const char* v = std::getenv("VOICEQAS_EXTERNAL_AI_MODEL")) {
+        cfg.model = v;
+    }
+    if (const char* v = std::getenv("VOICEQAS_EXTERNAL_AI_TIMEOUT_MS")) {
+        cfg.timeout_ms = std::stoi(v);
+    }
+}
+
+void apply_tracing_env(tracing::Config& tracing) {
+    if (const char* v = std::getenv("VOICEQAS_TRACING_ENABLED")) {
+        tracing.enabled = std::string(v) != "0" && std::string(v) != "false";
+    }
+    if (const char* v = std::getenv("VOICEQAS_OTLP_ENDPOINT")) {
+        tracing.otlp_endpoint = v;
+    }
+    if (const char* v = std::getenv("VOICEQAS_TRACING_SERVICE_NAME")) {
+        tracing.service_name = v;
+    }
+}
+
 void load_yaml_file(
     const std::string& path,
     ServerConfig& server,
@@ -127,7 +155,9 @@ void load_yaml_file(
     audio::AudioProcessingConfig& audio,
     audio::MediaRelayConfig& media,
     stt::SttConfig& stt_cfg,
-    ops::OpsConfig& ops_cfg) {
+    ops::OpsConfig& ops_cfg,
+    ops::ExternalAiConfig& external_ai_cfg,
+    tracing::Config& tracing_cfg) {
     const YAML::Node root = YAML::LoadFile(path);
     if (root["server"]) {
         const auto s = root["server"];
@@ -227,6 +257,20 @@ void load_yaml_file(
             ops_cfg.partial_stt_min_buffer_ms = o["partial_stt_min_buffer_ms"].as<int>();
         }
     }
+    if (root["external_ai"]) {
+        const auto e = root["external_ai"];
+        if (e["enabled"]) external_ai_cfg.enabled = e["enabled"].as<bool>();
+        if (e["provider"]) external_ai_cfg.provider = e["provider"].as<std::string>();
+        if (e["base_url"]) external_ai_cfg.base_url = e["base_url"].as<std::string>();
+        if (e["model"]) external_ai_cfg.model = e["model"].as<std::string>();
+        if (e["timeout_ms"]) external_ai_cfg.timeout_ms = e["timeout_ms"].as<int>();
+    }
+    if (root["tracing"]) {
+        const auto t = root["tracing"];
+        if (t["enabled"]) tracing_cfg.enabled = t["enabled"].as<bool>();
+        if (t["otlp_endpoint"]) tracing_cfg.otlp_endpoint = t["otlp_endpoint"].as<std::string>();
+        if (t["service_name"]) tracing_cfg.service_name = t["service_name"].as<std::string>();
+    }
 }
 
 }  // namespace
@@ -254,12 +298,16 @@ AppConfig load_app_config_from_file(const std::string& path) {
             cfg.audio,
             cfg.media,
             cfg.stt,
-            cfg.ops);
+            cfg.ops,
+            cfg.external_ai,
+            cfg.tracing);
     }
     apply_env_overrides(cfg.server, cfg.analyzer, cfg.audio);
     apply_stt_env(cfg.stt);
     apply_media_env(cfg.media);
     apply_ops_env(cfg.ops);
+    apply_external_ai_env(cfg.external_ai);
+    apply_tracing_env(cfg.tracing);
     if (!cfg.server.media_rtp_addr.empty()) {
         cfg.media.rtp_addr = cfg.server.media_rtp_addr;
     }
@@ -294,7 +342,9 @@ AppConfig load_app_config(int argc, char** argv) {
                 cfg.audio,
                 cfg.media,
                 cfg.stt,
-                cfg.ops);
+                cfg.ops,
+                cfg.external_ai,
+                cfg.tracing);
         } catch (const std::exception& e) {
             std::cerr << "warning: failed to load config: " << e.what() << '\n';
         }
@@ -304,6 +354,8 @@ AppConfig load_app_config(int argc, char** argv) {
     apply_stt_env(cfg.stt);
     apply_media_env(cfg.media);
     apply_ops_env(cfg.ops);
+    apply_external_ai_env(cfg.external_ai);
+    apply_tracing_env(cfg.tracing);
     if (!cfg.server.media_rtp_addr.empty()) {
         cfg.media.rtp_addr = cfg.server.media_rtp_addr;
     }

@@ -1,5 +1,7 @@
 #include "voiceqas/stt/client.hpp"
 
+#include "voiceqas/tracing/tracing.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -300,7 +302,13 @@ SttEngine::SttEngine(
         std::cerr << "voiceqas STT warning: " << msg << '\n';
     }
 
-    load_provider_locked(config_.provider);
+    try {
+        load_provider_locked(config_.provider);
+    } catch (const std::exception& e) {
+        impl_->load_error = std::string("failed to load STT provider '") + config_.provider +
+                            "': " + e.what();
+        std::cerr << "voiceqas STT warning: " << impl_->load_error << '\n';
+    }
 
     if (config_.vad.enabled) {
         const auto resolved = resolve_vad_model(
@@ -386,9 +394,14 @@ SttReadyStatus SttEngine::ready_status() const {
         status.loaded_providers.push_back(provider);
     }
 
-    const auto& active = ensure_provider_locked(status.provider);
-    status.parakeet_ready = active.parakeet != nullptr;
-    status.whisper_ready = active.whisper != nullptr;
+    try {
+        const auto& active = ensure_provider_locked(status.provider);
+        status.parakeet_ready = active.parakeet != nullptr;
+        status.whisper_ready = active.whisper != nullptr;
+    } catch (const std::exception& e) {
+        std::cerr << "voiceqas STT warning: ready_status provider load failed: " << e.what()
+                  << '\n';
+    }
     status.parakeet_model = impl_->parakeet_paths.label;
     status.whisper_model = impl_->whisper_paths.label;
     status.vad_ready = impl_->vad && impl_->vad->ready();
@@ -448,7 +461,16 @@ TranscriptResult SttEngine::transcribe_pcm16(
     }
 
     std::lock_guard lock(mutex_);
-    auto& bundle = ensure_provider_locked(provider);
+    RecognizerBundle* bundle_ptr = nullptr;
+    try {
+        bundle_ptr = &ensure_provider_locked(provider);
+    } catch (const std::exception& e) {
+        // ORT lança Ort::Exception quando o provider (ex.: CUDA) não carrega;
+        // sem este catch a exceção escapa por threads de parciais e derruba o processo.
+        failure.error = "failed to load STT provider '" + provider + "': " + e.what();
+        return failure;
+    }
+    auto& bundle = *bundle_ptr;
 
     std::vector<int16_t> working(pcm.begin(), pcm.end());
     int rate = sample_rate;
@@ -456,12 +478,16 @@ TranscriptResult SttEngine::transcribe_pcm16(
     const bool apply_vad =
         options.apply_vad.value_or(config_.vad.enabled && config_.vad.apply_before_stt);
     if (apply_vad && impl_->vad && impl_->vad->ready()) {
+        tracing::StageSpan vad_span("vad", "Silero VAD", options.telemetry_session_id.value_or(""));
+        vad_span.set_bytes_in(bytes_in);
         const auto vad_started = std::chrono::steady_clock::now();
         working = impl_->vad->extract_speech(working, rate);
         rate = 16000;
         const auto vad_ms = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - vad_started)
                                 .count();
+        vad_span.set_metric("voiceqas.duration_ms", vad_ms);
+        vad_span.set_bytes_out(working.size() * sizeof(int16_t));
         if (options.telemetry_session_id) {
             telemetry_->record_vad(
                 *options.telemetry_session_id,
@@ -484,8 +510,13 @@ TranscriptResult SttEngine::transcribe_pcm16(
             unavailable.error = "parakeet model unavailable for provider " + provider;
             return unavailable;
         }
-        return decode_with_recognizer(
+        tracing::StageSpan asr_span("asr", "ASR Parakeet", options.telemetry_session_id.value_or(""));
+        asr_span.set_bytes_in(working.size() * sizeof(int16_t));
+        auto result = decode_with_recognizer(
             bundle.parakeet, impl_->parakeet_paths.label, language, working, rate);
+        asr_span.set_metric("voiceqas.duration_ms", static_cast<double>(result.processing_ms));
+        asr_span.set_metric("voiceqas.model", result.model);
+        return result;
     };
 
     auto try_whisper = [&]() -> TranscriptResult {
@@ -494,8 +525,13 @@ TranscriptResult SttEngine::transcribe_pcm16(
             unavailable.error = "whisper model unavailable for provider " + provider;
             return unavailable;
         }
-        return decode_with_recognizer(
+        tracing::StageSpan asr_span("asr", "ASR Whisper", options.telemetry_session_id.value_or(""));
+        asr_span.set_bytes_in(working.size() * sizeof(int16_t));
+        auto result = decode_with_recognizer(
             bundle.whisper, impl_->whisper_paths.label, language, working, rate);
+        asr_span.set_metric("voiceqas.duration_ms", static_cast<double>(result.processing_ms));
+        asr_span.set_metric("voiceqas.model", result.model);
+        return result;
     };
 
     if (choice == SttModelChoice::Parakeet) {

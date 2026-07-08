@@ -214,7 +214,7 @@
     },
     {
       "datasource": {
-        "type": "marcusolsson-json-datasource",
+        "type": "yesoreyeram-infinity-datasource",
         "uid": "voiceqas-api"
       },
       "gridPos": {
@@ -229,32 +229,39 @@
         "editor": {
           "format": "auto"
         },
-        "getOption": "const frame = context.panel.data.series?.[0];\nif (!frame) {\n  return { title: { text: 'Sem dados de pipeline' }, series: [{ type: 'sankey', data: [], links: [] }] };\n}\nconst field = frame.fields?.find((f) => f.name === 'echarts');\nconst raw = field?.values?.[0] ?? field?.values?.buffer?.[0];\nif (!raw) {\n  return { title: { text: 'Aguardando tráfego (Tester ou RTP UDP :10000)' }, series: [{ type: 'sankey', data: [], links: [] }] };\n}\nconst opt = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst links = opt?.series?.[0]?.links ?? [];\nif (!links.length) {\n  return {\n    title: {\n      text: 'Pipeline Sankey — sem fluxo ativo',\n      subtext: 'Envie áudio no Tester (#tester) ou via RTP UDP :10000',\n    },\n    series: [{ type: 'sankey', data: [{ name: 'aguardando' }], links: [] }],\n  };\n}\nopt.title = {\n  text: 'Pipeline Sankey — ' + (context.grafana.replaceVariables('${scope:raw}') || 'fleet'),\n  subtext: links.length + ' links ativos',\n};\nreturn opt;"
+        "getOption": "const readField = (frame, name) => {\n  const field = frame?.fields?.find((f) => f.name === name);\n  if (!field?.values) {\n    return undefined;\n  }\n  const values = field.values;\n  if (typeof values.get === 'function') {\n    return values.get(0);\n  }\n  if (values.buffer?.length) {\n    return values.buffer[0];\n  }\n  return values[0];\n};\n\nconst frame = context.panel.data.series?.[0];\nconst raw = readField(frame, 'echarts');\nif (!raw) {\n  return {\n    title: { text: 'Pipeline Sankey', subtext: 'Aguardando tráfego (Tester :3000/#tester ou RTP UDP :10000)' },\n    series: [{ type: 'sankey', data: [{ name: 'waiting' }], links: [] }],\n  };\n}\n\nconst opt = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst series = opt?.series?.[0] ?? {};\nconst links = series.links ?? [];\nconst data = series.data ?? [];\n\nif (!links.length) {\n  return {\n    title: { text: 'Pipeline Sankey', subtext: 'Sessão sem fluxo — selecione All ou outra session_id' },\n    series: [{ type: 'sankey', data, links: [] }],\n  };\n}\n\nreturn {\n  title: { text: 'Audio Pipeline Sankey', subtext: links.length + ' active links' },\n  tooltip: opt.tooltip ?? { trigger: 'item' },\n  series: [{\n    type: 'sankey',\n    left: '2%',\n    right: '16%',\n    top: '10%',\n    bottom: '6%',\n    nodeWidth: 16,\n    nodeGap: 12,\n    emphasis: { focus: 'adjacency' },\n    lineStyle: { color: 'gradient', curveness: 0.5 },\n    label: {\n      color: context.grafana.theme.isDark ? '#e6edf3' : '#24292f',\n      formatter: (p) => p.data.label || p.name,\n    },\n    data,\n    links,\n  }],\n};"
       },
       "pluginVersion": "7.2.5",
       "targets": [
         {
-          "cacheDurationSeconds": 0,
+          "refId": "A",
           "datasource": {
-            "type": "marcusolsson-json-datasource",
+            "type": "yesoreyeram-infinity-datasource",
             "uid": "voiceqas-api"
           },
-          "fields": [
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/v1/ops/pipeline/snapshot",
+          "url_options": {
+            "method": "GET",
+            "params": [
+              {
+                "key": "session_id",
+                "value": "${session_id}"
+              }
+            ]
+          },
+          "root_selector": "",
+          "columns": [
             {
-              "jsonPath": "$.echarts",
-              "language": "jsonpath",
-              "name": "echarts"
-            },
-            {
-              "jsonPath": "$.scope",
-              "language": "jsonpath",
-              "name": "scope"
+              "selector": "echarts",
+              "text": "echarts",
+              "type": "string"
             }
           ],
-          "method": "GET",
-          "queryParams": "session_id=${session_id}",
-          "refId": "A",
-          "urlPath": "/v1/ops/pipeline/snapshot"
+          "parser": "backend",
+          "filters": []
         }
       ],
       "title": "Audio Pipeline Sankey",
@@ -1027,7 +1034,7 @@
     },
     {
       "datasource": {
-        "type": "marcusolsson-json-datasource",
+        "type": "yesoreyeram-infinity-datasource",
         "uid": "voiceqas-api"
       },
       "fieldConfig": {
@@ -1050,35 +1057,44 @@
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
-            "type": "marcusolsson-json-datasource",
+            "type": "yesoreyeram-infinity-datasource",
             "uid": "voiceqas-api"
           },
-          "fields": [
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/v1/ops/pipeline/sessions",
+          "url_options": {
+            "method": "GET",
+            "params": []
+          },
+          "root_selector": "active_sessions",
+          "columns": [
             {
-              "jsonPath": "$.active_sessions[*].session_id",
-              "language": "jsonpath",
-              "name": "session_id"
+              "selector": "session_id",
+              "text": "session_id",
+              "type": "string"
             },
             {
-              "jsonPath": "$.active_sessions[*].codec",
-              "language": "jsonpath",
-              "name": "codec"
+              "selector": "codec",
+              "text": "codec",
+              "type": "string"
             },
             {
-              "jsonPath": "$.active_sessions[*].composite_score",
-              "language": "jsonpath",
-              "name": "composite_score"
+              "selector": "composite_score",
+              "text": "composite_score",
+              "type": "number"
             },
             {
-              "jsonPath": "$.active_sessions[*].last_seen_ms",
-              "language": "jsonpath",
-              "name": "last_seen_ms"
+              "selector": "last_seen_ms",
+              "text": "last_seen_ms",
+              "type": "number"
             }
           ],
-          "method": "GET",
-          "refId": "A",
-          "urlPath": "/v1/ops/pipeline/sessions"
+          "parser": "backend",
+          "filters": []
         }
       ],
       "title": "Active Pipeline Sessions",
@@ -1086,7 +1102,7 @@
     },
     {
       "datasource": {
-        "type": "marcusolsson-json-datasource",
+        "type": "yesoreyeram-infinity-datasource",
         "uid": "voiceqas-api"
       },
       "fieldConfig": {
@@ -1109,47 +1125,56 @@
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
-            "type": "marcusolsson-json-datasource",
+            "type": "yesoreyeram-infinity-datasource",
             "uid": "voiceqas-api"
           },
-          "fields": [
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/v1/ops/pipeline/sessions",
+          "url_options": {
+            "method": "GET",
+            "params": []
+          },
+          "root_selector": "finished_sessions",
+          "columns": [
             {
-              "jsonPath": "$.finished_sessions[*].session_id",
-              "language": "jsonpath",
-              "name": "session_id"
+              "selector": "session_id",
+              "text": "session_id",
+              "type": "string"
             },
             {
-              "jsonPath": "$.finished_sessions[*].reason",
-              "language": "jsonpath",
-              "name": "reason"
+              "selector": "reason",
+              "text": "reason",
+              "type": "string"
             },
             {
-              "jsonPath": "$.finished_sessions[*].composite_score",
-              "language": "jsonpath",
-              "name": "composite_score"
+              "selector": "composite_score",
+              "text": "composite_score",
+              "type": "number"
             },
             {
-              "jsonPath": "$.finished_sessions[*].duration_ms",
-              "language": "jsonpath",
-              "name": "duration_ms"
+              "selector": "duration_ms",
+              "text": "duration_ms",
+              "type": "number"
             },
             {
-              "jsonPath": "$.finished_sessions[*].finished_ms",
-              "language": "jsonpath",
-              "name": "finished_ms"
+              "selector": "finished_ms",
+              "text": "finished_ms",
+              "type": "number"
             }
           ],
-          "method": "GET",
-          "refId": "A",
-          "urlPath": "/v1/ops/pipeline/sessions"
+          "parser": "backend",
+          "filters": []
         }
       ],
       "title": "Finished Pipeline Sessions",
       "type": "table"
     }
   ],
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 39,
   "tags": [
     "voiceqas",
@@ -1159,14 +1184,14 @@
   "templating": {
     "list": [
       {
-        "allValue": "",
+        "allValue": "$__all",
         "current": {
           "selected": true,
           "text": "All",
           "value": "$__all"
         },
         "datasource": {
-          "type": "marcusolsson-json-datasource",
+          "type": "yesoreyeram-infinity-datasource",
           "uid": "voiceqas-api"
         },
         "definition": "",
@@ -1177,17 +1202,29 @@
         "name": "session_id",
         "options": [],
         "query": {
-          "fields": [
-            {
-              "jsonPath": "$.session_ids[*]",
-              "language": "jsonpath",
-              "name": "session_id"
-            }
-          ],
-          "method": "GET",
-          "urlPath": "/v1/ops/pipeline/sessions"
+          "queryType": "",
+          "infinityQuery": {
+            "type": "json",
+            "source": "url",
+            "format": "table",
+            "url": "/v1/ops/pipeline/sessions",
+            "url_options": {
+              "method": "GET",
+              "params": []
+            },
+            "root_selector": "session_ids",
+            "columns": [
+              {
+                "selector": ".",
+                "text": "session_id",
+                "type": "string"
+              }
+            ],
+            "parser": "backend",
+            "filters": []
+          }
         },
-        "refresh": 2,
+        "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
@@ -1203,5 +1240,5 @@
   "timezone": "browser",
   "title": "VoiceQAS Pipeline Sankey",
   "uid": "voiceqas-pipeline-sankey",
-  "version": 3
+  "version": 7
 }

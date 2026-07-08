@@ -103,6 +103,30 @@ public:
                     uint64_t bytes_out);
     void record_asr(const std::string& session_id, int64_t processing_ms, uint64_t bytes_in);
     void record_ai_agent_inbound(const std::string& session_id, uint64_t bytes);
+    void record_transport_ingress(
+        const std::string& session_id,
+        const std::string& transport,
+        uint64_t bytes,
+        double latency_ms = 0.0,
+        double jitter_ms = 0.0);
+    void record_transport_egress(
+        const std::string& session_id,
+        const std::string& transport,
+        uint64_t bytes,
+        double latency_ms = 0.0);
+    void record_media_pipeline(
+        const std::string& session_id,
+        uint64_t bytes,
+        double latency_ms,
+        const char* direction);
+    void record_external_ai_inbound(
+        const std::string& session_id,
+        uint64_t bytes,
+        double latency_ms = 0.0);
+    void record_external_ai_outbound(
+        const std::string& session_id,
+        uint64_t bytes,
+        double latency_ms = 0.0);
     void record_outbound(const std::string& session_id, const OutboundTimings& timings);
     void set_session_codec(const std::string& session_id, const std::string& codec);
     void finish_session(const std::string& session_id, const std::string& reason);
@@ -122,10 +146,13 @@ private:
 
     struct SessionState {
         std::unordered_map<std::string, StageBucket> stages;
+        std::unordered_map<std::string, StageBucket> transports;
         int64_t first_seen_ms = 0;
         int64_t last_seen_ms = 0;
         std::string codec;
         int64_t last_snapshot_ms = 0;
+        int64_t transport_rate_ms = 0;
+        uint64_t transport_rate_bytes = 0;
     };
 
     struct FinishedSessionRecord {
@@ -137,6 +164,7 @@ private:
         int64_t finished_ms = 0;
         int64_t duration_ms = 0;
         std::unordered_map<std::string, StageBucket> stages;
+        std::unordered_map<std::string, StageBucket> transports;
     };
 
     static constexpr std::size_t kMaxFinishedSessions = 200;
@@ -152,8 +180,15 @@ private:
                                  uint64_t& last_bytes);
     SessionState& session_state(const std::string& session_id);
     StageBucket& stage(SessionState& session, const std::string& stage_id, const char* direction);
+    StageBucket& transport(SessionState& session, const std::string& node_id, const char* direction);
+    void touch_transport_rate(
+        const std::string& session_id,
+        const std::string& node_id,
+        SessionState& session,
+        StageBucket& bucket);
     void prune_stale_sessions_locked();
     static void merge_session_stages_into(SessionState& fleet, const SessionState& session);
+    static void merge_session_transports_into(SessionState& fleet, const SessionState& session);
     nlohmann::json build_snapshot_from_state(const SessionState& session, const std::string& scope,
                                              const std::optional<std::string>& session_id) const;
     nlohmann::json aggregate_fleet_snapshot();

@@ -7,6 +7,8 @@
 #include "voiceqas/stt/client.hpp"
 
 #include "voiceqas/ops/config.hpp"
+#include "voiceqas/ops/external_ai_config.hpp"
+#include "voiceqas/tracing/tracing.hpp"
 
 namespace voiceqas {
 
@@ -27,6 +29,8 @@ struct AppConfig {
     audio::MediaRelayConfig media;
     stt::SttConfig stt;
     ops::OpsConfig ops;
+    ops::ExternalAiConfig external_ai;
+    tracing::Config tracing;
 };
 
 AppConfig load_app_config(int argc, char** argv);

@@ -37,6 +37,7 @@ Serviço C++ de **VQA** e **STT** para tronco SIP. Branch media pipeline: `featu
 | 3200 | Tempo |
 
 | 12345 | Grafana Alloy UI |
+| — | Beyla eBPF → Alloy OTLP (sidecar `voiceqas-beyla`) |
 
 
 
@@ -82,7 +83,12 @@ Stack em `deploy/observability/`: Prometheus, Grafana, Loki, Tempo, Alloy.
 
 Dados persistentes no host em `data/observability/` (métricas, logs, traces, Grafana DB, ops JSONL). Sobrevive a `docker compose down`; use `docker compose down -v` apenas para o volume `stt-models`.
 
-- Grafana dashboard **VoiceQAS Pipeline Sankey** (`:3001`, uid `voiceqas-pipeline-sankey`) — visão fleet + drill-down por `session_id`
+- **Audio Pipeline** no Command Center (`:3000/#command-center`) — estágios ao vivo via `/v1/ops/pipeline/snapshot`
+- **APM / Traces** — Grafana (`:3001/d/voiceqas-apm`) ou Command Center (`:3000/#command-center`); ambos usam Tempo
+- **RED / Latência** no Command Center — P50/P95/P98, RPS, 4xx/5xx, RPS por endpoint via Prometheus/Beyla (`/prometheus` proxy)
+- Stack observabilidade (Jul/2026): Prometheus **v3.13.0**, Loki **3.7.3**, Tempo **3.0.2**, Alloy **v1.17.1**, Grafana **12.4.5** (12.x por compat. Business Charts 7.x)
+- Grafana VoiceQAS API datasource: **Infinity** (`yesoreyeram-infinity-datasource`); JSON API é frontend-only e falha no Grafana 12
+- Grafana: entrypoint copia plugins para `/var/lib/grafana/plugins` e habilita Infinity + ECharts no boot
 
 
 

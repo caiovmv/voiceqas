@@ -1,6 +1,7 @@
 // Collect Docker container logs and ship to Loki.
 discovery.docker "voiceqas" {
-  host = "unix:///var/run/docker.sock"
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
 }
 
 discovery.relabel "voiceqas" {
@@ -31,7 +32,7 @@ loki.write "voiceqas" {
   }
 }
 
-// Receive OTLP traces (future voiceqas instrumentation) and forward to Tempo.
+// Receive OTLP traces (Beyla / future SDK) and forward to Tempo.
 otelcol.receiver.otlp "default" {
   grpc {
     endpoint = "0.0.0.0:4317"

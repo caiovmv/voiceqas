@@ -7,6 +7,7 @@ interface UseOpsStreamOptions {
   onVqaWindow: (sessionId: string, metrics: WindowMetrics) => void;
   onSttEvent?: (sessionId: string, event: OpsEvent) => void;
   onAlert?: (sessionId: string, event: OpsEvent) => void;
+  onPipelineSnapshot?: (snapshot: import('../lib/types').PipelineSnapshot) => void;
   onStatus: (msg: string) => void;
   autoConnect?: boolean;
   autoReconnect?: boolean;
@@ -17,6 +18,7 @@ export function useOpsStream({
   onVqaWindow,
   onSttEvent,
   onAlert,
+  onPipelineSnapshot,
   onStatus,
   autoConnect = false,
   autoReconnect = true,
@@ -25,8 +27,8 @@ export function useOpsStream({
   const handleRef = useRef<ReturnType<typeof connectOpsStream> | null>(null);
   const reconnectTimer = useRef<number | null>(null);
   const manualDisconnect = useRef(false);
-  const callbacksRef = useRef({ onVqaWindow, onSttEvent, onAlert, onStatus });
-  callbacksRef.current = { onVqaWindow, onSttEvent, onAlert, onStatus };
+  const callbacksRef = useRef({ onVqaWindow, onSttEvent, onAlert, onPipelineSnapshot, onStatus });
+  callbacksRef.current = { onVqaWindow, onSttEvent, onAlert, onPipelineSnapshot, onStatus };
 
   const closeSocket = useCallback(() => {
     if (reconnectTimer.current) {
@@ -56,6 +58,8 @@ export function useOpsStream({
           callbacksRef.current.onSttEvent?.(ev.session_id, ev);
         } else if (ev.type === 'alert') {
           callbacksRef.current.onAlert?.(ev.session_id, ev);
+        } else if (ev.type === 'pipeline_snapshot' || (!ev.type && 'nodes' in ev && 'links' in ev)) {
+          callbacksRef.current.onPipelineSnapshot?.(ev as import('../lib/types').PipelineSnapshot);
         }
       },
       onStatus: (msg) => {

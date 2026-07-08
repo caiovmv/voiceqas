@@ -3,8 +3,6 @@ import type { EncodedPayload } from '../audio';
 import { apiBase, resolveWsBase } from './client';
 import { concatFrames, parseWsJson, sleep } from './util';
 
-const wsBase = resolveWsBase();
-
 export async function analyzeRestBatch(
   encoded: EncodedPayload,
   config: CodecConfig,
@@ -44,7 +42,7 @@ export function analyzeWebSocket(
   onStatus: (msg: string) => void,
   dropPct: number,
 ): { close: () => void; send: () => Promise<void> } {
-  const ws = new WebSocket(`${wsBase}/v1/stream`);
+  const ws = new WebSocket(`${resolveWsBase()}/v1/stream`);
   let handshakeOk = false;
   let resolveHandshake: (() => void) | null = null;
   let rejectHandshake: ((err: Error) => void) | null = null;

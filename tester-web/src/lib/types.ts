@@ -75,6 +75,12 @@ export interface OpsSttEvent {
   language?: string;
   ok?: boolean;
   error?: string;
+  /** Latência ASR (ms) — tempo de processamento do recognizer. */
+  processing_ms?: number;
+  /** Duração do áudio reconhecido (ms). */
+  duration_ms?: number;
+  segments?: Array<{ start_ms: number; end_ms: number; text: string }>;
+  ts_ms?: number;
 }
 
 export interface OpsAlertEvent {
@@ -91,7 +97,83 @@ export interface OpsAlertEvent {
   source?: string;
 }
 
-export type OpsEvent = OpsVqaEvent | OpsSttEvent | OpsAlertEvent;
+export interface PipelineStageMetrics {
+  bytes_in: number;
+  bytes_out: number;
+  bytes_per_sec: number;
+  composite_score: number;
+  jitter_ms: number;
+  latency_ms_p50: number;
+  latency_ms_p95: number;
+  packet_loss_pct: number;
+  dropped_bytes: number;
+  packets_in?: number;
+  packets_out?: number;
+  snr_db?: number;
+  rms_dbfs?: number;
+  stt_ready?: boolean;
+  processing_ms?: number;
+  buffer_ms?: number;
+}
+
+export interface PipelineNode {
+  name: string;
+  label: string;
+  direction: 'inbound' | 'outbound';
+  metrics: PipelineStageMetrics;
+}
+
+export interface PipelineLink {
+  source: string;
+  target: string;
+  value: number;
+}
+
+export interface TransportSankeyView {
+  direction: 'inbound' | 'outbound' | string;
+  nodes: PipelineNode[];
+  links: PipelineLink[];
+  echarts?: Record<string, unknown>;
+}
+
+export interface TransportSankeyPair {
+  inbound?: TransportSankeyView;
+  outbound?: TransportSankeyView;
+}
+
+/** Option ECharts Sankey embutida pelo backend (`build_echarts_sankey_option`). */
+export interface PipelineEchartsOption {
+  tooltip?: Record<string, unknown>;
+  series?: Array<{
+    type?: string;
+    data?: Array<{ name: string; value?: number; itemStyle?: { color?: string }; label?: string }>;
+    links?: Array<{ source: string; target: string; value: number }>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface PipelineSnapshot {
+  type?: 'pipeline_snapshot';
+  status: string;
+  scope: 'fleet' | 'session' | string;
+  codec?: string;
+  ts_ms: number;
+  session_id?: string;
+  nodes: PipelineNode[];
+  links: PipelineLink[];
+  echarts?: PipelineEchartsOption;
+  transport_sankey?: TransportSankeyPair;
+}
+
+export interface PipelineSessionsResponse {
+  status: string;
+  session_ids?: string[];
+  active_sessions?: Array<{ session_id: string; codec?: string; composite_score?: number }>;
+  finished_sessions?: Array<{ session_id: string; reason?: string }>;
+}
+
+export type OpsEvent = OpsVqaEvent | OpsSttEvent | OpsAlertEvent | PipelineSnapshot;
 
 export interface SessionAlert {
   sessionId: string;

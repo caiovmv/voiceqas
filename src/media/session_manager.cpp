@@ -1,5 +1,7 @@
 #include "voiceqas/media/session.hpp"
 
+#include "voiceqas/tracing/tracing.hpp"
+
 #include <chrono>
 
 #include "voiceqas/stt/audio_prepare.hpp"
@@ -166,26 +168,39 @@ OutboundAudioResult MediaSessionManager::send_agent_pcm(
         return result;
     }
 
+    tracing::StageSpan resample_span("resample_out", "Resample Out", session_id);
+    resample_span.set_bytes_in(pcm.size() * sizeof(int16_t));
     const auto resample_started = std::chrono::steady_clock::now();
     auto working = stt::resample_pcm16(pcm, input_sample_rate, session.config.sample_rate);
     const auto resample_ms = std::chrono::duration<double, std::milli>(
                                  std::chrono::steady_clock::now() - resample_started)
                                  .count();
+    resample_span.set_metric("voiceqas.duration_ms", resample_ms);
+    resample_span.set_bytes_out(working.size() * sizeof(int16_t));
+
+    tracing::StageSpan limit_span("peak_limit", "Peak Limiter", session_id);
+    limit_span.set_bytes_in(working.size() * sizeof(int16_t));
     const auto limit_started = std::chrono::steady_clock::now();
     audio::apply_peak_limiter_inplace(working);
     const auto limiter_ms = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - limit_started)
                                 .count();
+    limit_span.set_metric("voiceqas.duration_ms", limiter_ms);
 
+    tracing::StageSpan encode_span("encode", "Encode", session_id);
+    encode_span.set_bytes_in(working.size() * sizeof(int16_t));
     const auto encode_started = std::chrono::steady_clock::now();
     const auto encoded = audio::encode_from_pcm(session.config.format, working, &session.packetizer);
     const auto encode_ms = std::chrono::duration<double, std::milli>(
                                std::chrono::steady_clock::now() - encode_started)
                                .count();
+    encode_span.set_metric("voiceqas.duration_ms", encode_ms);
     if (!encoded.ok) {
+        encode_span.set_metric("voiceqas.error", encoded.error);
         result.error = encoded.error;
         return result;
     }
+    encode_span.set_bytes_out(encoded.rtp_packets.empty() ? 0 : encoded.rtp_packets[0].size());
 
     result.rtp_packets = encoded.rtp_packets;
     size_t rtp_bytes = 0;

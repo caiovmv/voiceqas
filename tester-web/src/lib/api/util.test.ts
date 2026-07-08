@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getOpsToken, setOpsToken } from '../auth';
-import { concatFrames, opsWsHandshake, parseWsJson } from './util';
+import { concatFrames, opsWsHandshake, parseWsEventData, parseWsJson } from './util';
 
 describe('api util', () => {
   beforeEach(() => {
@@ -9,6 +9,12 @@ describe('api util', () => {
 
   it('strips null padding from websocket JSON', () => {
     const parsed = parseWsJson('{"status":"ok"}\0\0') as { status: string };
+    expect(parsed.status).toBe('ok');
+  });
+
+  it('parses websocket event data from ArrayBuffer', async () => {
+    const buf = new TextEncoder().encode('{"status":"ok"}').buffer;
+    const parsed = (await parseWsEventData(buf)) as { status: string };
     expect(parsed.status).toBe('ok');
   });
 

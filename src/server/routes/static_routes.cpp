@@ -11,11 +11,11 @@
 namespace voiceqas::routes {
 
 void register_static_routes(httplib::Server& server, const RouteContext& ctx) {
-    server->Get("/health", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
-    server->Get("/metrics", [ctx](const httplib::Request&, httplib::Response& res) {
+    server.Get("/metrics", [ctx](const httplib::Request&, httplib::Response& res) {
         const bool stt_ready = ctx.stt_sessions && ctx.stt_sessions->engine().ready();
         const auto ops_listeners = ops::OpsMetricsHub::instance().listener_count();
         const auto vqa = ops::PrometheusMetrics::instance().snapshot();
@@ -33,7 +33,7 @@ void register_static_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(out.str(), "text/plain; version=0.0.4; charset=utf-8");
     });
 
-    server->Get("/ready", [ctx](const httplib::Request&, httplib::Response& res) {
+    server.Get("/ready", [ctx](const httplib::Request&, httplib::Response& res) {
         nlohmann::json body = {
             {"status", "ready"},
             {"service", "voiceqas"},
@@ -57,15 +57,15 @@ void register_static_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(body.dump(), "application/json");
     });
 
-    server->Get("/", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/ui/");
     });
 
-    server->Get("/docs", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/docs", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/docs/swagger");
     });
 
-    server->Get("/docs/swagger", [ctx](const httplib::Request&, httplib::Response& res) {
+    server.Get("/docs/swagger", [ctx](const httplib::Request&, httplib::Response& res) {
         const auto content = read_file_or_empty(ctx.web_root + "/swagger.html");
         if (content.empty()) {
             res.status = 404;
@@ -74,7 +74,7 @@ void register_static_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(content, "text/html; charset=utf-8");
     });
 
-    server->Get("/docs/redoc", [ctx](const httplib::Request&, httplib::Response& res) {
+    server.Get("/docs/redoc", [ctx](const httplib::Request&, httplib::Response& res) {
         const auto content = read_file_or_empty(ctx.web_root + "/redoc.html");
         if (content.empty()) {
             res.status = 404;
@@ -83,7 +83,7 @@ void register_static_routes(httplib::Server& server, const RouteContext& ctx) {
         res.set_content(content, "text/html; charset=utf-8");
     });
 
-    server->Get("/openapi/voiceqas.yaml", [ctx](const httplib::Request&, httplib::Response& res) {
+    server.Get("/openapi/voiceqas.yaml", [ctx](const httplib::Request&, httplib::Response& res) {
         const auto content = read_file_or_empty(ctx.openapi_path);
         if (content.empty()) {
             res.status = 404;

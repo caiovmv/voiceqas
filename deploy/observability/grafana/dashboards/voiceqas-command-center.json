@@ -13,9 +13,9 @@
       "url": "http://localhost:3000/#command-center"
     },
     {
-      "title": "Pipeline Sankey",
+      "title": "Audio Pipeline (Command Center)",
       "type": "link",
-      "url": "/d/voiceqas-pipeline-sankey/voiceqas-pipeline-sankey"
+      "url": "http://localhost:3000/#command-center"
     }
   ],
   "panels": [

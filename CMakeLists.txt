@@ -101,6 +101,23 @@ voiceqas_apply_cxx_std(voiceqas_proto)
 target_include_directories(voiceqas_proto PUBLIC ${PROTO_OUT_DIR})
 target_link_libraries(voiceqas_proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
 
+find_package(opentelemetry-cpp CONFIG REQUIRED COMPONENTS exporters_otlp_grpc)
+
+add_library(voiceqas_tracing STATIC
+    src/tracing/tracing.cpp
+)
+voiceqas_apply_cxx_std(voiceqas_tracing)
+target_compile_definitions(voiceqas_tracing PUBLIC VOICEQAS_ENABLE_TRACING=1)
+target_include_directories(voiceqas_tracing PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(voiceqas_tracing PUBLIC
+    opentelemetry-cpp::api
+    opentelemetry-cpp::otlp_grpc_exporter
+    opentelemetry-cpp::trace
+    opentelemetry-cpp::resources
+)
+
 add_subdirectory(third_party/spandsp)
 
 add_library(voiceqas_core STATIC
@@ -162,6 +179,7 @@ target_link_libraries(voiceqas_core PUBLIC
     yaml-cpp::yaml-cpp
     spandsp_g722
     ${VOICEQAS_BCG729_LIB}
+    voiceqas_tracing
 )
 if(VOICEQAS_ENABLE_STT)
     target_compile_definitions(voiceqas_core PUBLIC VOICEQAS_ENABLE_STT=1)
@@ -181,6 +199,9 @@ add_library(voiceqas_ops STATIC
     src/ops/prometheus.cpp
     src/ops/pipeline_tracker.cpp
     src/ops/pipeline_snapshot.cpp
+    src/ops/transport_sankey.cpp
+    src/ops/external_ai_config.cpp
+    src/ops/external_ai_service.cpp
     src/ops/adapters/ops_ports.cpp
 )
 voiceqas_apply_cxx_std(voiceqas_ops)
@@ -204,6 +225,7 @@ add_library(voiceqas_server STATIC
     src/server/routes/ops_routes.cpp
     src/server/routes/stt_routes.cpp
     src/server/grpc_mappers.cpp
+    src/server/grpc_playground_client.cpp
     src/server/grpc_server.cpp
     src/server/ws_server.cpp
     src/server/media_relay.cpp
@@ -246,6 +268,7 @@ if(VOICEQAS_BUILD_TESTS)
         tests/test_audio_pipeline.cpp
         tests/test_stt_gate_extended.cpp
         tests/test_pipeline_tracker.cpp
+        tests/test_transport_sankey.cpp
         tests/test_rtp_packetizer.cpp
         tests/test_ops_webhook.cpp
         tests/test_prometheus.cpp

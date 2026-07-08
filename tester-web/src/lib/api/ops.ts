@@ -1,4 +1,4 @@
-import type { OpsAlertEvent, OpsEvent } from '../types';
+import type { OpsAlertEvent, OpsEvent, PipelineSessionsResponse, PipelineSnapshot } from '../types';
 import { fetchJson, resolveWsBase } from './client';
 import { opsWsHandshake, parseWsJson } from './util';
 
@@ -28,10 +28,20 @@ export async function fetchOpsAlerts(sessionId?: string, limit = 50) {
   );
 }
 
+export async function fetchPipelineSnapshot(sessionId?: string) {
+  const q = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+  return fetchJson<PipelineSnapshot>(`/v1/ops/pipeline/snapshot${q}`);
+}
+
+export async function fetchPipelineSessions() {
+  return fetchJson<PipelineSessionsResponse>('/v1/ops/pipeline/sessions');
+}
+
 export function connectOpsStream(options: {
   filterSessionId?: string;
   subscribeVqa?: boolean;
   subscribeStt?: boolean;
+  subscribePipeline?: boolean;
   onEvent: (ev: OpsEvent) => void;
   onStatus: (msg: string) => void;
 }): { close: () => void } {
@@ -51,6 +61,10 @@ export function connectOpsStream(options: {
       }
       if (data.type === 'vqa_window' || data.type === 'stt_final' || data.type === 'stt_partial' || data.type === 'alert') {
         options.onEvent(data as unknown as OpsEvent);
+        return;
+      }
+      if (data.type === 'pipeline_snapshot') {
+        options.onEvent(data as unknown as PipelineSnapshot);
         return;
       }
       if (data.error) {

@@ -4,6 +4,8 @@
 #include "voiceqas/server/routes/route_helpers.hpp"
 
 #include "voiceqas/json_util.hpp"
+#include "voiceqas/ops/pipeline_tracker.hpp"
+#include "voiceqas/ops/transport_sankey.hpp"
 #include "voiceqas/wav.hpp"
 
 #include <cstring>
@@ -11,15 +13,15 @@
 namespace voiceqas::routes {
 
 void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
-    server->Get("/v1/playground/grpc/ready", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/v1/playground/grpc/ready", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(grpc_ready_json().dump(), "application/json");
     });
 
-    server->Post("/v1/playground/grpc/ready", [](const httplib::Request&, httplib::Response& res) {
+    server.Post("/v1/playground/grpc/ready", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(grpc_ready_json().dump(), "application/json");
     });
 
-    server->Post("/v1/playground/grpc/analyze-batch", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/playground/grpc/analyze-batch", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             const auto body = nlohmann::json::parse(req.body);
             const auto format = format_from_json(body);
@@ -48,7 +50,7 @@ void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/playground/grpc/analyze-stream", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/playground/grpc/analyze-stream", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             const auto body = nlohmann::json::parse(req.body);
             const std::string session_id = body.value("session_id", "playground");
@@ -78,7 +80,7 @@ void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/analyze/batch", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/analyze/batch", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             std::vector<uint8_t> payload(req.body.begin(), req.body.end());
             AudioFormat format = format_from_header(req);
@@ -97,11 +99,19 @@ void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
                 std::memcpy(payload.data(), wav->samples.data(), payload.size());
             }
 
+            const auto session_id = telemetry_session_id_from_request(req).value_or("rest-analyze");
             const auto result = ctx.sessions->analyze_batch(
                 format,
                 std::span<const uint8_t>(payload.data(), payload.size()),
                 sample_rate,
-                telemetry_session_id_from_request(req));
+                std::optional<std::string>{session_id});
+
+            ops::PipelineTracker::instance().record_transport_ingress(
+                session_id,
+                ops::transport_node::kRest,
+                payload.size(),
+                0.0,
+                0.0);
 
             res.set_content(batch_result_to_json(result).dump(), "application/json");
         } catch (const std::exception& e) {
@@ -110,7 +120,7 @@ void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/tools/pack-rtp", [](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/tools/pack-rtp", [](const httplib::Request& req, httplib::Response& res) {
         try {
             const auto body = nlohmann::json::parse(req.body);
             const auto format = audio_format_from_string(body.at("format").get<std::string>());
@@ -135,7 +145,7 @@ void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
         }
     });
 
-    server->Post("/v1/tools/decode-rtp", [](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/tools/decode-rtp", [](const httplib::Request& req, httplib::Response& res) {
         try {
             const auto body = nlohmann::json::parse(req.body);
             const auto format = audio_format_from_string(body.at("format").get<std::string>());
@@ -145,7 +155,7 @@ void register_vqa_routes(httplib::Server& server, const RouteContext& ctx) {
             res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
         }
     });
-    server->Post("/v1/analyze/segment", [ctx](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/v1/analyze/segment", [ctx](const httplib::Request& req, httplib::Response& res) {
         try {
             const auto body = nlohmann::json::parse(req.body);
             const auto format = audio_format_from_string(body.at("format").get<std::string>());

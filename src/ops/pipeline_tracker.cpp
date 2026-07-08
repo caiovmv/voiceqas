@@ -8,6 +8,7 @@
 #include "voiceqas/ops/metrics_hub.hpp"
 #include "voiceqas/ops/pipeline_snapshot.hpp"
 #include "voiceqas/ops/prometheus.hpp"
+#include "voiceqas/ops/transport_sankey.hpp"
 
 namespace voiceqas::ops {
 
@@ -101,6 +102,112 @@ PipelineTracker::StageBucket& PipelineTracker::stage(
     return bucket;
 }
 
+PipelineTracker::StageBucket& PipelineTracker::transport(
+    SessionState& session,
+    const std::string& node_id,
+    const char* direction) {
+    auto& bucket = session.transports[node_id];
+    if (bucket.direction.empty()) {
+        bucket.direction = direction;
+    }
+    return bucket;
+}
+
+void PipelineTracker::touch_transport_rate(
+    const std::string& session_id,
+    const std::string& node_id,
+    SessionState& session,
+    StageBucket& bucket) {
+    static thread_local std::unordered_map<std::string, int64_t> last_rate_ms;
+    static thread_local std::unordered_map<std::string, uint64_t> last_bytes;
+    const auto key = session_id + ":" + node_id + ":" + bucket.direction;
+    update_bytes_rate(bucket, bucket.metrics.bytes_out, session.last_seen_ms, last_rate_ms[key], last_bytes[key]);
+}
+
+void PipelineTracker::record_transport_ingress(
+    const std::string& session_id,
+    const std::string& transport_id,
+    uint64_t bytes,
+    double latency_ms,
+    double jitter_ms) {
+    if (bytes == 0 && latency_ms <= 0.0) {
+        return;
+    }
+    std::lock_guard lock(mutex_);
+    auto& session = session_state(session_id);
+    auto& node = transport(session, transport_id, kPipelineDirectionInbound);
+    touch_stage_metrics(node.metrics, bytes, bytes, latency_ms);
+    if (jitter_ms > 0.0) {
+        node.metrics.jitter_ms = jitter_ms;
+    }
+    touch_transport_rate(session_id, transport_id, session, node);
+    auto& media = transport(session, transport_node::kMediaPipeline, kPipelineDirectionInbound);
+    touch_stage_metrics(media.metrics, bytes, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
+}
+
+void PipelineTracker::record_transport_egress(
+    const std::string& session_id,
+    const std::string& transport_id,
+    uint64_t bytes,
+    double latency_ms) {
+    if (bytes == 0 && latency_ms <= 0.0) {
+        return;
+    }
+    std::lock_guard lock(mutex_);
+    auto& session = session_state(session_id);
+    auto& media = transport(session, transport_node::kMediaPipeline, kPipelineDirectionOutbound);
+    touch_stage_metrics(media.metrics, bytes, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
+    auto& node = transport(session, transport_id, kPipelineDirectionOutbound);
+    touch_stage_metrics(node.metrics, bytes, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_id, session, node);
+}
+
+void PipelineTracker::record_media_pipeline(
+    const std::string& session_id,
+    uint64_t bytes,
+    double latency_ms,
+    const char* direction) {
+    if (bytes == 0 && latency_ms <= 0.0) {
+        return;
+    }
+    std::lock_guard lock(mutex_);
+    auto& session = session_state(session_id);
+    auto& media = transport(session, transport_node::kMediaPipeline, direction);
+    touch_stage_metrics(media.metrics, bytes, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
+}
+
+void PipelineTracker::record_external_ai_inbound(
+    const std::string& session_id,
+    uint64_t bytes,
+    double latency_ms) {
+    std::lock_guard lock(mutex_);
+    auto& session = session_state(session_id);
+    auto& external = transport(session, transport_node::kExternalAi, kPipelineDirectionInbound);
+    touch_stage_metrics(external.metrics, bytes, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_node::kExternalAi, session, external);
+    auto& media = transport(session, transport_node::kMediaPipeline, kPipelineDirectionInbound);
+    touch_stage_metrics(media.metrics, 0, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
+}
+
+void PipelineTracker::record_external_ai_outbound(
+    const std::string& session_id,
+    uint64_t bytes,
+    double latency_ms) {
+    std::lock_guard lock(mutex_);
+    auto& session = session_state(session_id);
+    auto& external = transport(session, transport_node::kExternalAi, kPipelineDirectionOutbound);
+    touch_stage_metrics(external.metrics, bytes, bytes, latency_ms);
+    external.metrics.processing_ms = static_cast<int64_t>(latency_ms);
+    touch_transport_rate(session_id, transport_node::kExternalAi, session, external);
+    auto& media = transport(session, transport_node::kMediaPipeline, kPipelineDirectionOutbound);
+    touch_stage_metrics(media.metrics, bytes, bytes, latency_ms);
+    touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
+}
+
 void PipelineTracker::record_rtp_ingress(
     const std::string& session_id,
     uint64_t bytes,
@@ -118,6 +225,18 @@ void PipelineTracker::record_rtp_ingress(
         static thread_local std::unordered_map<std::string, uint64_t> last_bytes;
         update_bytes_rate(rtp, rtp.metrics.bytes_in, session.last_seen_ms, last_rate_ms[session_id],
                           last_bytes[session_id]);
+        auto& sip_transport = transport(session, transport_node::kSipTrunk, kPipelineDirectionInbound);
+        touch_stage_metrics(sip_transport.metrics, bytes, bytes, 0.0);
+        if (jitter_ms > 0.0) {
+            sip_transport.metrics.jitter_ms = jitter_ms;
+        }
+        touch_transport_rate(session_id, transport_node::kSipTrunk, session, sip_transport);
+        auto& media = transport(session, transport_node::kMediaPipeline, kPipelineDirectionInbound);
+        touch_stage_metrics(media.metrics, bytes, bytes, 0.0);
+        if (jitter_ms > 0.0) {
+            media.metrics.jitter_ms = jitter_ms;
+        }
+        touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
     }
     if (jitter_ms > 0.0) {
         rtp.metrics.jitter_ms = jitter_ms;
@@ -248,6 +367,12 @@ void PipelineTracker::record_outbound(const std::string& session_id, const Outbo
     touch_stage_metrics(egress.metrics, timings.rtp_bytes, timings.rtp_bytes, 0.0);
     egress.metrics.packets_out += timings.rtp_packets;
     touch_stage_metrics(sip.metrics, timings.rtp_bytes, timings.rtp_bytes, 0.0);
+    auto& sip_transport = transport(session, transport_node::kSipTrunk, kPipelineDirectionOutbound);
+    touch_stage_metrics(sip_transport.metrics, timings.rtp_bytes, timings.rtp_bytes, 0.0);
+    touch_transport_rate(session_id, transport_node::kSipTrunk, session, sip_transport);
+    auto& media = transport(session, transport_node::kMediaPipeline, kPipelineDirectionOutbound);
+    touch_stage_metrics(media.metrics, timings.pcm_bytes, timings.rtp_bytes, timings.encode_ms);
+    touch_transport_rate(session_id, transport_node::kMediaPipeline, session, media);
 }
 
 void PipelineTracker::set_session_codec(const std::string& session_id, const std::string& codec) {
@@ -311,6 +436,7 @@ void PipelineTracker::finish_session_locked(const std::string& session_id, const
         record.composite_score = vqa_it->second.metrics.composite_score;
     }
     record.stages = it->second.stages;
+    record.transports = it->second.transports;
 
     finished_sessions_.push_front(record);
     if (finished_sessions_.size() > kMaxFinishedSessions) {
@@ -352,6 +478,11 @@ nlohmann::json PipelineTracker::build_snapshot_from_state(
         stages[name] = bucket.metrics;
     }
     auto sankey = build_sankey_json(stages, sankey_link_defs(), sankey_node_defs());
+    std::unordered_map<std::string, PipelineStageMetrics> transport_metrics;
+    for (const auto& [name, bucket] : session.transports) {
+        transport_metrics[name] = bucket.metrics;
+    }
+    const auto transport_sankey = build_transport_sankey_pair(transport_metrics);
     nlohmann::json out = {
         {"scope", scope},
         {"ts_ms", now_ms()},
@@ -359,6 +490,7 @@ nlohmann::json PipelineTracker::build_snapshot_from_state(
         {"nodes", sankey["nodes"]},
         {"links", sankey["links"]},
         {"echarts", build_echarts_sankey_option(sankey["nodes"], sankey["links"])},
+        {"transport_sankey", transport_sankey},
     };
     if (session_id) {
         out["session_id"] = *session_id;
@@ -397,6 +529,27 @@ void PipelineTracker::merge_session_stages_into(SessionState& fleet, const Sessi
     }
 }
 
+void PipelineTracker::merge_session_transports_into(SessionState& fleet, const SessionState& session) {
+    for (const auto& [node_name, bucket] : session.transports) {
+        auto& target = fleet.transports[node_name];
+        if (target.direction.empty()) {
+            target.direction = bucket.direction;
+        }
+        auto& m = target.metrics;
+        const auto& s = bucket.metrics;
+        m.bytes_in += s.bytes_in;
+        m.bytes_out += s.bytes_out;
+        m.packets_in += s.packets_in;
+        m.packets_out += s.packets_out;
+        m.latency_ms_p50 = m.latency_ms_p50 <= 0.0 ? s.latency_ms_p50
+            : (m.latency_ms_p50 + s.latency_ms_p50) * 0.5;
+        m.latency_ms_p95 = std::max(m.latency_ms_p95, s.latency_ms_p95);
+        m.bytes_per_sec += s.bytes_per_sec;
+        m.jitter_ms = m.jitter_ms <= 0.0 ? s.jitter_ms : (m.jitter_ms + s.jitter_ms) * 0.5;
+        m.processing_ms = std::max(m.processing_ms, s.processing_ms);
+    }
+}
+
 nlohmann::json PipelineTracker::aggregate_fleet_snapshot() {
     SessionState fleet;
     fleet.last_seen_ms = now_ms();
@@ -407,12 +560,15 @@ nlohmann::json PipelineTracker::aggregate_fleet_snapshot() {
             continue;
         }
         merge_session_stages_into(fleet, session);
+        merge_session_transports_into(fleet, session);
     }
     for (const auto& record : finished_sessions_) {
         SessionState finished;
         finished.codec = record.codec;
         finished.stages = record.stages;
+        finished.transports = record.transports;
         merge_session_stages_into(fleet, finished);
+        merge_session_transports_into(fleet, finished);
     }
     return build_snapshot_from_state(fleet, "fleet", std::nullopt);
 }
@@ -430,6 +586,7 @@ nlohmann::json PipelineTracker::build_snapshot(const std::optional<std::string>&
                 SessionState finished;
                 finished.codec = record.codec;
                 finished.stages = record.stages;
+                finished.transports = record.transports;
                 return build_snapshot_from_state(finished, "session", session_id);
             }
         }

@@ -3,9 +3,9 @@ import type { CodecConfig, SttModel, SttResult } from '../types';
 import type { EncodedPayload } from '../audio';
 import { shouldDropFrame } from '../audio';
 import { apiBase, fetchJson, resolveWsBase } from './client';
-import { concatFrames, parseWsJson, sleep } from './util';
+import { concatFrames, parseWsEventData, parseWsJson, sleep } from './util';
 
-const wsBase = resolveWsBase();
+const STT_FLUSH_TIMEOUT_MS = 180_000;
 
 export async function setVadModel(model: string) {
   return fetchJson<{
@@ -80,22 +80,96 @@ export async function transcribeRestWav(wav: Blob, model: SttModel = 'auto'): Pr
   return res.json();
 }
 
+function parseSttWsMessage(raw: unknown): Record<string, unknown> {
+  if (typeof raw === 'string') {
+    return parseWsJson(raw) as Record<string, unknown>;
+  }
+  throw new Error('STT WebSocket: mensagem inesperada (binária)');
+}
+
 export function transcribeWebSocket(
   encoded: EncodedPayload,
   config: CodecConfig,
   onStatus: (msg: string) => void,
 ): { close: () => void; send: () => Promise<SttResult> } {
+  const wsBase = resolveWsBase();
   const ws = new WebSocket(`${wsBase}/v1/stt/stream`);
+  ws.binaryType = 'arraybuffer';
 
   let resolveFlush: ((value: SttResult) => void) | null = null;
+  let rejectFlush: ((err: Error) => void) | null = null;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let handshakeOk = false;
+  let flushDone = false;
   let resolveHandshake: (() => void) | null = null;
   let rejectHandshake: ((err: Error) => void) | null = null;
+  let handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearFlushWait = () => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    resolveFlush = null;
+    rejectFlush = null;
+  };
+
+  const clearHandshakeWait = () => {
+    if (handshakeTimer) {
+      clearTimeout(handshakeTimer);
+      handshakeTimer = null;
+    }
+    resolveHandshake = null;
+    rejectHandshake = null;
+  };
+
   const handshakePromise = new Promise<void>((resolve, reject) => {
     resolveHandshake = resolve;
     rejectHandshake = reject;
-    setTimeout(() => reject(new Error('STT handshake timeout')), 10_000);
+    handshakeTimer = setTimeout(() => reject(new Error('STT handshake timeout')), 15_000);
   });
+
+  const handleJson = (data: Record<string, unknown>) => {
+    if (data.status === 'ok' && !handshakeOk) {
+      handshakeOk = true;
+      clearHandshakeWait();
+      resolveHandshake?.();
+      onStatus('STT handshake OK');
+      return;
+    }
+    if (data.error) {
+      const err = new Error(String(data.error));
+      if (!handshakeOk) {
+        clearHandshakeWait();
+        rejectHandshake?.(err);
+      } else if (rejectFlush) {
+        const reject = rejectFlush;
+        clearFlushWait();
+        reject(err);
+      }
+      return;
+    }
+    if (!resolveFlush) return;
+    if (data.type === 'final') {
+      const result = data as unknown as SttResult;
+      if (result.ok === false) {
+        const reject = rejectFlush;
+        clearFlushWait();
+        reject?.(new Error(result.error ?? 'STT falhou'));
+        return;
+      }
+      const resolve = resolveFlush;
+      clearFlushWait();
+      flushDone = true;
+      resolve(result);
+      return;
+    }
+    if (data.type === 'error') {
+      const reject = rejectFlush;
+      clearFlushWait();
+      reject?.(new Error(String(data.error ?? 'STT falhou')));
+    }
+  };
 
   ws.onopen = () => {
     ws.send(
@@ -108,34 +182,61 @@ export function transcribeWebSocket(
         language: 'pt',
       }),
     );
-    onStatus('STT WebSocket conectado, handshake enviado');
+    onStatus(`STT WebSocket conectado (${wsBase})`);
   };
 
   ws.onmessage = (ev) => {
-    try {
-      const data = parseWsJson(ev.data as string) as Record<string, unknown>;
-      if (data.status === 'ok') {
-        handshakeOk = true;
-        resolveHandshake?.();
-        onStatus('STT handshake OK');
-        return;
-      }
-      if (data.error) {
-        rejectHandshake?.(new Error(String(data.error)));
-        return;
-      }
-      if (data.type === 'final' || data.type === 'error' || data.text !== undefined) {
-        if (resolveFlush) {
-          resolveFlush(data as unknown as SttResult);
-          resolveFlush = null;
+    void (async () => {
+      try {
+        let data: Record<string, unknown>;
+        if (typeof ev.data === 'string') {
+          data = parseSttWsMessage(ev.data);
+        } else {
+          data = (await parseWsEventData(ev.data)) as Record<string, unknown>;
+        }
+        handleJson(data);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!handshakeOk && rejectHandshake) {
+          clearHandshakeWait();
+          rejectHandshake(new Error(msg));
+        } else if (rejectFlush) {
+          const reject = rejectFlush;
+          clearFlushWait();
+          reject(new Error(msg));
+        } else {
+          onStatus(msg);
         }
       }
-    } catch {
-      onStatus(String(ev.data));
-    }
+    })();
   };
 
-  ws.onerror = () => onStatus('Erro STT WebSocket');
+  ws.onerror = () => {
+    const err = new Error('Erro STT WebSocket');
+    if (!handshakeOk) {
+      clearHandshakeWait();
+      rejectHandshake?.(err);
+    } else if (rejectFlush) {
+      const reject = rejectFlush;
+      clearFlushWait();
+      reject(err);
+    }
+    onStatus(err.message);
+  };
+
+  ws.onclose = () => {
+    if (flushDone) return;
+    if (!handshakeOk) {
+      clearHandshakeWait();
+      rejectHandshake?.(new Error('STT WebSocket fechado antes do handshake'));
+      return;
+    }
+    if (rejectFlush) {
+      const reject = rejectFlush;
+      clearFlushWait();
+      reject(new Error('STT WebSocket fechado antes da resposta do flush'));
+    }
+  };
 
   const send = async () => {
     await handshakePromise;
@@ -147,19 +248,40 @@ export function transcribeWebSocket(
         continue;
       }
       ws.send(encoded.frames[i]);
-      await sleep(config.frameMs);
+      if (config.frameMs > 0) {
+        await sleep(config.frameMs);
+      }
     }
+    onStatus('Áudio enviado, aguardando flush STT…');
     const result = await new Promise<SttResult>((resolve, reject) => {
       resolveFlush = resolve;
-      ws.send(JSON.stringify({ type: 'flush', model: config.sttModel }));
-      setTimeout(() => reject(new Error('STT flush timeout')), 120_000);
+      rejectFlush = reject;
+      flushTimer = setTimeout(() => {
+        clearFlushWait();
+        reject(new Error('STT flush timeout'));
+      }, STT_FLUSH_TIMEOUT_MS);
+      ws.send(
+        JSON.stringify({
+          type: 'flush',
+          model: config.sttModel,
+          provider: config.sttProvider,
+          language: 'pt',
+        }),
+      );
     });
+    flushDone = true;
+    clearFlushWait();
     ws.close();
     return result;
   };
 
   return {
-    close: () => ws.close(),
+    close: () => {
+      flushDone = true;
+      clearHandshakeWait();
+      clearFlushWait();
+      ws.close();
+    },
     send,
   };
 }

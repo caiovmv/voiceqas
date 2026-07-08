@@ -46,14 +46,16 @@ Tokens (`ops:` no YAML ou env):
 
 ---
 
-## Pipeline Sankey (Grafana)
+## Audio Pipeline (Command Center)
 
-Dashboard **VoiceQAS Pipeline Sankey** em Grafana (`http://localhost:3001`):
+Painel nativo em **Command Center** (`http://localhost:3000/#command-center`):
 
-- **Fleet (default):** métricas agregadas via Prometheus `voiceqas_pipeline_*`
-- **Debug por sessão:** variável `session_id` → `GET /v1/ops/pipeline/snapshot?session_id=...`
-- Painel ECharts com inbound (SIP → VQA → STT → AI Agent) e outbound (AI Agent → SIP)
-- **11 painéis por estágio** (escala independente): `sip_in`, `rtp_ingress`, `decode_vqa`, `agc_vqa`, `enhancement`, `vqa`, `stt_gate`, `decode_stt`, `agc_stt`, `resample_16k`, `stt_buffer`
+- **Fleet ou por sessão:** dropdown alimentado por `GET /v1/ops/pipeline/sessions`
+- **Estágios inbound/outbound** com barras de bytes, VQA score, jitter, drops
+- Atualização: poll 3s + eventos `pipeline_snapshot` no ops WS
+- Sem dependência de Grafana/ECharts/Infinity
+
+Grafana (`:3001`) mantém métricas Prometheus `voiceqas_pipeline_*` nos dashboards de ops; o Sankey ECharts foi descontinuado.
 
 ---
 
