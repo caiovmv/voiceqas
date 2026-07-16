@@ -46,6 +46,7 @@ public:
         double,
         double,
         double,
+        double,
         double) override {
         ++vqa_path_calls;
     }

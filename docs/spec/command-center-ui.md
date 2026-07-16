@@ -5,7 +5,26 @@
 | Modo | URL | Público |
 |------|-----|---------|
 | **Tester** | `#tester` (default) | Engenharia / QA |
+| **Análise** | `#analysis` | Lab vertical: captura → codec → mix → gate → Processar → STT/LLM |
 | **Command Center** | `#command-center` | Operações / NOC |
+
+### Análise (lab de pipeline)
+
+Fluxo em `#analysis` (`AnalysisLabApp`):
+
+1. **Fonte** — gravar / carregar WAV (`RecorderPanel` + waveform)
+2. **Codec (opcional)** — off = `pcm_s16le_16k`; on = tronco G.711 / G.722 / PCM via `CodecConfigPanel`
+3. **Mesa de mix** — toggles AGC, RNNoise, Silero turns, focus primary
+4. **Gate VQA** — limiares (score, SNR, silence-for-ready, histerese, split quality/presence)
+5. **Processar** — duas passagens com o mesmo áudio/codec:
+   - **Antes:** mix legado (`LEGACY_MIX`) + headers DSP off
+   - **Depois:** mix configurado + headers `X-Audio-AGC`, `X-Audio-Enhancement`, `X-STT-Diarization`, `X-STT-Focus-Primary`
+6. **Resultados** — métricas, timeline scores sobreposta, espectrograma (FFT local + turns), painel de interlocutores
+7. **STT** — modelo (`auto|parakeet|whisper`) + provider (`cpu|cuda`); diff visual do texto; turns multi-ator quando diarization on e focus_primary off
+8. **LLM** — POST /v1/analysis/llm (proxy Ollama). Payload: { mix, before, after, objective } onde objective (lib/domain/analysis-objective.ts) agrega SNR/RMS/peak/crest/clipping/ready e stt_token_f1_after_vs_before (proxy lexical, **não** WER). Resposta em 6 seções: Diagnóstico → Configuração do strip (sem juízo de eficácia) → **Validação objetiva do DSP** (tabela) → STT → Sugestões → Plano. PESQ/STOI/LUFS/WER indisponíveis até existirem no Lab — o agente não deve inventá-los.
+   Server-side: valida titulos das 6 secoes + tabela objetiva; ate 3 tentativas; resposta inclui format_ok/attempts/format_errors (HTTP 422 se falhar).
+
+Re-score local do gate: `lib/domain/vqa-rescore.ts`. Headers: `lib/api/process-headers.ts`.
 
 ---
 
@@ -122,3 +141,26 @@ Vitest cobre `domain/*`, codecs (`g711`, `g722`) e utilitários de áudio.
 - TSDB dedicado (Prometheus/ClickHouse) em vez de JSONL
 - OAuth / SSO enterprise
 - Online recognizer sherpa (modelo streaming dedicado)
+
+
+## Command Center ? rotas (rework produ??o)
+
+| Hash | Se??o |
+|------|--------|
+| `#command-center` | Monitor (overview) |
+| `#command-center/pipeline` | Inbound / Outbound / Transport / DSP |
+| `#command-center/asr` | ASR / STT + VAD |
+| `#command-center/sessions` | Media + sess?es + hist?rico |
+| `#command-center/observability` | RED + APM |
+| `#command-center/config` | Auth ops, pipeline default, canais |
+
+- **Ops WS:** auto-connect ao abrir; reconex?o a cada **10s** (`OPS_WS_RECONNECT_MS`).
+- **Sess?o ativa ?nica:** dropdown global alimenta pipeline, ASR e hist?rico.
+- **NOC fullscreen:** slides (Overview ? Pipeline ? ASR ? Sess?es ? Alertas ? RED ? APM), autoplay 30s, **Fixar slide**, atalhos ?/? e P.
+- **Auth ops:** apenas em Configura??o; presets dev s? em `import.meta.env.DEV`.
+
+### Canais (`/v1/config/channels`)
+
+Persist?ncia: `VOICEQAS_CHANNELS_CONFIG_PATH` (default `/data/config/channels.yaml`, volume Docker `./data/config`).
+
+Tipos: `sip_trunk`, `websocket`, `webrtc`, `rest`, `grpc`. Pipeline default global; override por canal. Media sessions aceitam `channel_id`.

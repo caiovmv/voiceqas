@@ -39,10 +39,18 @@ public:
         uint64_t pcm_bytes,
         double decode_ms,
         double agc_ms,
+        double enhancement_ms,
         double jitter_ms,
         double packet_loss_pct) override {
         PipelineTracker::instance().record_vqa_path(
-            session_id, payload_bytes, pcm_bytes, decode_ms, agc_ms, jitter_ms, packet_loss_pct);
+            session_id,
+            payload_bytes,
+            pcm_bytes,
+            decode_ms,
+            agc_ms,
+            enhancement_ms,
+            jitter_ms,
+            packet_loss_pct);
     }
 
     void record_vqa_window(const std::string& session_id, const WindowMetrics& metrics) override {
@@ -59,6 +67,7 @@ public:
         SttPrepareTimings ops_timings{
             .decode_ms = timings.decode_ms,
             .agc_ms = timings.agc_ms,
+            .enhancement_ms = timings.enhancement_ms,
             .resample_ms = timings.resample_ms,
             .pcm_bytes = timings.pcm_bytes,
             .payload_bytes = timings.payload_bytes,

@@ -1,0 +1,62 @@
+{
+  "at": "2026-07-08T20:03:50.419Z",
+  "grpcAddr": "127.0.0.1:9051",
+  "cc": "http://127.0.0.1:3000",
+  "audioSec": 2,
+  "results": [
+    {
+      "status": "PASS",
+      "name": "gRPC Ready",
+      "detail": "status=ready service=voiceqas-stt model=parakeet-tdt-0.6b-v3-int8",
+      "at": "2026-07-08T20:03:28.274Z"
+    },
+    {
+      "status": "PASS",
+      "name": "Capabilities",
+      "detail": "models=[parakeet,whisper] providers=[cpu,cuda] cuda_compiled=true",
+      "at": "2026-07-08T20:03:28.900Z"
+    },
+    {
+      "status": "PASS",
+      "name": "gRPC native · parakeet · cpu",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=89 textLen=0 wall=7219ms",
+      "at": "2026-07-08T20:03:36.125Z"
+    },
+    {
+      "status": "PASS",
+      "name": "gRPC native · parakeet · cuda",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=289 textLen=0 wall=896ms",
+      "at": "2026-07-08T20:03:37.022Z"
+    },
+    {
+      "status": "PASS",
+      "name": "gRPC native · whisper · cpu",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=1038 textLen=4 wall=1695ms",
+      "at": "2026-07-08T20:03:38.717Z"
+    },
+    {
+      "status": "PASS",
+      "name": "gRPC native · whisper · cuda",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=974 textLen=4 wall=1638ms",
+      "at": "2026-07-08T20:03:40.355Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS RED gRPC Beyla+OTel",
+      "detail": "beyla_rps=0.0140 otel_rps=0.0123",
+      "at": "2026-07-08T20:03:50.364Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS Beyla by method",
+      "detail": "/voiceqas.v1.SpeechToTextService/Transcribe=0.0140",
+      "at": "2026-07-08T20:03:50.367Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS APM gRPC Transcribe",
+      "detail": "traces=5 sample=gRPC SpeechToTextService/Transcribe 163ms",
+      "at": "2026-07-08T20:03:50.418Z"
+    }
+  ]
+}

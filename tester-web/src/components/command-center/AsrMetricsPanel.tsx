@@ -12,6 +12,7 @@ echarts.use([ELineChart, BarChart, GridComponent, LegendComponent, TooltipCompon
 interface AsrMetricsPanelProps {
   sessions: TrackedSession[];
   filterSessionId?: string;
+  showChannelColumn?: boolean;
 }
 
 function formatPct(v: number): string {
@@ -140,7 +141,7 @@ function AsrCharts({ metrics }: { metrics: AsrMetricsSnapshot }) {
   return <div ref={hostRef} className="cc-asr-chart" role="img" aria-label="ASR latency and SNR" />;
 }
 
-export function AsrMetricsPanel({ sessions, filterSessionId }: AsrMetricsPanelProps) {
+export function AsrMetricsPanel({ sessions, filterSessionId, showChannelColumn }: AsrMetricsPanelProps) {
   const [history, setHistory] = useState<OpsEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -245,6 +246,7 @@ export function AsrMetricsPanel({ sessions, filterSessionId }: AsrMetricsPanelPr
             <thead>
               <tr>
                 <th>Sessão</th>
+                {showChannelColumn && <th>Canal</th>}
                 <th>Tipo</th>
                 <th>Latência</th>
                 <th>Texto</th>
@@ -254,6 +256,12 @@ export function AsrMetricsPanel({ sessions, filterSessionId }: AsrMetricsPanelPr
               {metrics.recentTranscripts.map((row) => (
                 <tr key={`${row.sessionId}-${row.t}-${row.type}-${row.text.slice(0, 12)}`}>
                   <td><code>{row.sessionId.slice(0, 16)}</code></td>
+                  {showChannelColumn && (
+                    <td>
+                      {sessions.find((s) => s.sessionId === row.sessionId)?.mediaMeta?.channel_id ??
+                        'default'}
+                    </td>
+                  )}
                   <td>
                     <span className={`badge ${row.ok ? 'ok' : 'bad'}`}>{row.type.replace('stt_', '')}</span>
                     {row.model ? <span className="muted"> {row.model}</span> : null}

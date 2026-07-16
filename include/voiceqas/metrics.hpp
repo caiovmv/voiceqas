@@ -23,7 +23,10 @@ struct AnalyzerConfig {
     double stt_ready_threshold = 65.0;
     double min_snr_db = 12.0;
     double max_clipping_ratio = 0.02;
+    /** Classifies speech windows for speech_aggregated (not the ready gate). */
     double max_silence_ratio = 0.60;
+    /** Presence cap for stt_ready (stricter than max_silence_ratio). */
+    double max_silence_ratio_for_ready = 0.40;
     int hysteresis_ok_windows = 2;
     int hysteresis_bad_windows = 1;
     double speech_energy_threshold_dbfs = -40.0;
@@ -45,17 +48,31 @@ struct WindowMetrics {
     double spectral_flatness = 1.0;
     double packet_loss_pct = 0.0;
     double jitter_ms = 0.0;
+    /** Quality-only score (no silence penalty); composite_score mirrors this. */
+    double speech_quality_score = 0.0;
     double composite_score = 0.0;
     bool stt_ready = false;
     int64_t window_start_ms = 0;
 };
 
 struct BatchResult {
+    /** Session score = speech-only weighted aggregate (0 if no speech windows). */
     double composite_score = 0.0;
     bool stt_ready = false;
+    /** Last window only (legacy snapshot for streaming/telemetry). */
     WindowMetrics aggregated{};
+    /** Weighted mean of speech windows only (weight = 1 - silence_ratio). */
+    WindowMetrics speech_aggregated{};
     std::vector<WindowMetrics> windows;
+    /** Speech windows only (silence_ratio <= max_silence_ratio). */
+    std::vector<WindowMetrics> speech_windows;
     std::vector<std::pair<int64_t, int64_t>> stt_ready_segments;
+    int speech_window_count = 0;
+    int ready_window_count = 0;
+    double ready_ratio = 0.0;
+    double snr_std = 0.0;
+    /** Heuristic 0–1 STT risk from speech windows (higher = worse). */
+    double stt_risk = 0.0;
 };
 
 int sample_rate_for_format(AudioFormat format);

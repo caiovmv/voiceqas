@@ -2,13 +2,10 @@
 
 #include "voiceqas/tracing/tracing.hpp"
 
-#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <cstring>
 
 #include "voiceqas/audio/decoder.hpp"
-#include "voiceqas/audio/normalizer.hpp"
+#include "voiceqas/audio/dsp/channel_strip.hpp"
 #include "voiceqas/audio/resampler.hpp"
 #include "voiceqas/rtp/depacketizer.hpp"
 
@@ -52,17 +49,17 @@ PreparedAudio prepare_audio_for_stt(
     decode_span.set_bytes_out(decoded.pcm.size() * sizeof(int16_t));
 
     auto pcm = decoded.pcm;
-    if (audio_config.normalize_enabled && !pcm.empty()) {
-        tracing::StageSpan agc_span("agc_stt", "AGC STT");
-        agc_span.set_bytes_in(pcm.size() * sizeof(int16_t));
-        const auto agc_started = std::chrono::steady_clock::now();
-        audio::AgcState agc(audio_config);
-        agc.process_inplace(pcm, rate);
-        prepared.agc_ms = std::chrono::duration<double, std::milli>(
-                              std::chrono::steady_clock::now() - agc_started)
-                              .count();
-        agc_span.set_metric("voiceqas.duration_ms", prepared.agc_ms);
-        agc_span.set_bytes_out(pcm.size() * sizeof(int16_t));
+    if (!pcm.empty()) {
+        tracing::StageSpan strip_span("dsp_strip_stt", "Channel strip STT");
+        strip_span.set_bytes_in(pcm.size() * sizeof(int16_t));
+        audio::AudioProcessingConfig cfg = audio_config;
+        cfg.sync_legacy_from_strip();
+        audio::VoiceChannelStrip strip(cfg);
+        const auto timings = strip.process_inplace(pcm, rate);
+        prepared.agc_ms = timings.agc_ms;
+        prepared.enhancement_ms = timings.nr_ms;
+        strip_span.set_metric("voiceqas.duration_ms", timings.agc_ms + timings.nr_ms);
+        strip_span.set_bytes_out(pcm.size() * sizeof(int16_t));
     }
 
     tracing::StageSpan resample_span("resample_16k", "Resample 16 kHz");

@@ -1,0 +1,110 @@
+VoiceQAS
+Copyright 2026 VoiceQAS authors and contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the project root.
+
+This product includes software developed by third parties. The
+following notices are provided for informational purposes and do not
+modify the Apache-2.0 license of VoiceQAS itself.
+
+---------------------------------------------------------------------------
+SpanDSP (G.722 subset)
+---------------------------------------------------------------------------
+Project:    freeswitch/spandsp (Steve Underwood)
+License:    GNU Lesser General Public License v2.1 (LGPL-2.1)
+Location:   third_party/spandsp/
+Notice:     See third_party/spandsp/LICENSE.spandsp.txt
+
+The vendored SpanDSP sources remain under LGPL-2.1. Redistributors
+that statically or dynamically link this subset must comply with
+LGPL-2.1 (including offering corresponding source and, for static
+linking, object files or equivalent necessary for relinking).
+
+---------------------------------------------------------------------------
+RNNoise
+---------------------------------------------------------------------------
+Project:    xiph/rnnoise (Jean-Marc Valin / Xiph.Org)
+License:    BSD-3-Clause
+Usage:      Optional noise reduction (VOICEQAS_HAS_RNNOISE / vcpkg rnnoise)
+
+---------------------------------------------------------------------------
+sherpa-onnx
+---------------------------------------------------------------------------
+Project:    k2-fsa/sherpa-onnx
+License:    Apache License 2.0
+Usage:      Embedded speech-to-text (Parakeet / Whisper ONNX runtimes)
+
+---------------------------------------------------------------------------
+bcg729
+---------------------------------------------------------------------------
+Project:    Belledonne Communications bcg729
+License:    GNU General Public License v2 or later (GPL-2.0-or-later)
+            with additional linking exception commonly applied by
+            Belledonne for bcg729 (verify the exact notice shipping
+            with your vcpkg package).
+Usage:      G.729 RTP codec
+
+---------------------------------------------------------------------------
+gRPC / Protocol Buffers
+---------------------------------------------------------------------------
+Project:    grpc/grpc, protocolbuffers/protobuf
+License:    Apache License 2.0
+
+---------------------------------------------------------------------------
+Boost.Beast (Boost)
+---------------------------------------------------------------------------
+Project:    boostorg/beast (and Boost dependencies)
+License:    Boost Software License 1.0 (BSL-1.0)
+
+---------------------------------------------------------------------------
+cpp-httplib
+---------------------------------------------------------------------------
+Project:    yhirose/cpp-httplib
+License:    MIT License
+
+---------------------------------------------------------------------------
+nlohmann-json
+---------------------------------------------------------------------------
+Project:    nlohmann/json
+License:    MIT License
+
+---------------------------------------------------------------------------
+yaml-cpp
+---------------------------------------------------------------------------
+Project:    jbeder/yaml-cpp
+License:    MIT License
+
+---------------------------------------------------------------------------
+OpenTelemetry C++
+---------------------------------------------------------------------------
+Project:    open-telemetry/opentelemetry-cpp
+License:    Apache License 2.0
+
+---------------------------------------------------------------------------
+GoogleTest
+---------------------------------------------------------------------------
+Project:    google/googletest
+License:    BSD-3-Clause
+Usage:      Optional unit tests (vcpkg feature "test")
+
+---------------------------------------------------------------------------
+Command Center / Tester Web (tester-web)
+---------------------------------------------------------------------------
+React, React DOM ? MIT License (Meta Platforms)
+Vite ? MIT License
+TypeScript ? Apache License 2.0
+ECharts ? Apache License 2.0
+fflate ? MIT License
+Vitest ? MIT License
+Playwright ? Apache License 2.0
+
+---------------------------------------------------------------------------
+Observability images (docker-compose, not linked into the binary)
+---------------------------------------------------------------------------
+Prometheus, Grafana, Loki, Tempo, Grafana Alloy ? respective
+Apache-2.0 / AGPLv3 notices of their upstream projects apply to those
+container images as published by their maintainers.
+
+This NOTICE file is provided under Apache-2.0 section 4(d). It is for
+attribution only and does not modify the License of VoiceQAS.

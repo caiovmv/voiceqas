@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ensureDefaultOpsToken, getOpsToken, setOpsToken } from '../../lib/auth';
+import { probeOpsRole, useCommandCenter } from '../../context/CommandCenterContext';
 
 const DEV_PRESETS = [
   { id: 'dev-write', label: 'write (VAD, media)' },
@@ -10,6 +11,9 @@ const DEV_PRESETS = [
 export function AuthPanel() {
   const [token, setToken] = useState(getOpsToken());
   const [saved, setSaved] = useState(false);
+  const { bumpWsReconnect } = useCommandCenter();
+  const role = probeOpsRole();
+  const showPresets = import.meta.env.DEV || import.meta.env.VITE_CC_DEV_PRESETS === '1';
 
   useEffect(() => {
     ensureDefaultOpsToken();
@@ -18,6 +22,7 @@ export function AuthPanel() {
 
   const save = () => {
     setOpsToken(token.trim());
+    bumpWsReconnect();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -25,16 +30,17 @@ export function AuthPanel() {
   const applyPreset = (preset: string) => {
     setToken(preset);
     setOpsToken(preset);
+    bumpWsReconnect();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   return (
     <section className="panel cc-auth">
-      <h2>Auth ops</h2>
+      <h2>Segurança ops</h2>
       <p className="muted">
-        Envie <code>X-Ops-Token</code> nas chamadas REST e no ops WebSocket.{' '}
-        <strong>Write</strong> ou <strong>admin</strong> são necessários para VAD, media e mutações.
+        Envie <code>X-Ops-Token</code> nas chamadas REST e no ops WebSocket. Role inferido:{' '}
+        <span className="badge">{role}</span>
       </p>
       <div className="row">
         <label className="cc-token-label">
@@ -51,6 +57,7 @@ export function AuthPanel() {
         </button>
         {saved && <span className="ok">Salvo</span>}
       </div>
+      {showPresets && (
       <div className="row cc-auth-presets">
         {DEV_PRESETS.map((p) => (
           <button key={p.id} type="button" className="btn" onClick={() => applyPreset(p.id)}>
@@ -58,6 +65,7 @@ export function AuthPanel() {
           </button>
         ))}
       </div>
+      )}
     </section>
   );
 }

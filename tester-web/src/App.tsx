@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react';
+import { AnalysisLabApp } from './components/analysis/AnalysisLabApp';
 import { CommandCenterApp } from './CommandCenterApp';
 import { TesterApp } from './TesterApp';
 
-type AppMode = 'tester' | 'command-center';
+import { isCommandCenterHash } from './lib/domain/cc-routes';
+
+type AppMode = 'tester' | 'command-center' | 'analysis';
 
 function modeFromHash(): AppMode {
-  return location.hash === '#command-center' ? 'command-center' : 'tester';
+  if (isCommandCenterHash(location.hash)) return 'command-center';
+  if (location.hash === '#analysis') return 'analysis';
+  return 'tester';
+}
+
+function hashFor(mode: AppMode): string {
+  if (mode === 'command-center') return '#command-center';
+  if (mode === 'analysis') return '#analysis';
+  return '#tester';
 }
 
 export default function App() {
@@ -18,12 +29,14 @@ export default function App() {
   }, []);
 
   const go = (next: AppMode) => {
-    location.hash = next === 'command-center' ? '#command-center' : '#tester';
+    location.hash = hashFor(next);
     setMode(next);
   };
 
+  const wide = mode === 'command-center' || mode === 'analysis';
+
   return (
-    <div className={mode === 'command-center' ? 'layout layout-wide' : 'layout'}>
+    <div className={wide ? 'layout layout-wide' : 'layout'}>
       <nav className="app-nav">
         <button
           type="button"
@@ -34,6 +47,13 @@ export default function App() {
         </button>
         <button
           type="button"
+          className={`tab ${mode === 'analysis' ? 'active' : ''}`}
+          onClick={() => go('analysis')}
+        >
+          Análise
+        </button>
+        <button
+          type="button"
           className={`tab ${mode === 'command-center' ? 'active' : ''}`}
           onClick={() => go('command-center')}
         >
@@ -41,7 +61,9 @@ export default function App() {
         </button>
       </nav>
 
-      {mode === 'tester' ? <TesterApp /> : <CommandCenterApp />}
+      {mode === 'tester' && <TesterApp />}
+      {mode === 'analysis' && <AnalysisLabApp />}
+      {mode === 'command-center' && <CommandCenterApp />}
     </div>
   );
 }

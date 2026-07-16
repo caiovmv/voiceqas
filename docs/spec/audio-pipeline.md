@@ -15,9 +15,11 @@ O problema alvo é qualidade da **voz do interlocutor** (nível baixo, ruído), 
 flowchart TB
     subgraph inbound [Entrada interlocutor]
         RTP_IN[RTP UDP ou WS/gRPC] --> DEC[audio::decode_to_pcm]
-        DEC --> AGC[AudioNormalizer AGC]
-        AGC --> VQA[VoiceAnalyzer]
-        AGC --> STT[STT resample 16k]
+        DEC --> STRIP["VoiceChannelStrip NR HPF EQ DeEss Comp Lim AGC"]
+        STRIP --> VQA[VoiceAnalyzer]
+        STRIP --> STT[STT resample 16k]
+        STT --> DIA[Silero turns + primary]
+        DIA --> ASR[ASR offline]
     end
 
     subgraph egress [Saída agente]
@@ -63,38 +65,49 @@ Módulo unificado: `audio::decode_to_pcm()` em [`src/audio/decoder.cpp`](../../s
 - RTP: `RtpDepacketizer` com estado (loss, jitter, G.722/G.729 stateful)
 - PCM: cópia direta int16 LE
 
-### Normalização (AGC)
+#### Channel strip (`audio.strip`)
 
-Config em `audio:` no YAML:
+Defaults calibrated (S15, Jul/2026): **NR off**, DeEss off, mild EQ, soft compressor (ratio 2 / makeup 0). Full RNNoise wet=1.0 regresses Whisper (latissima/suporte).
 
-| Parâmetro | Default | Efeito |
-|-----------|---------|--------|
-| `normalize_enabled` | `true` | Liga/desliga AGC |
-| `agc_target_rms_dbfs` | `-20` | Nível alvo |
-| `agc_max_gain_db` | `24` | Ganho máximo |
-| `agc_attack_ms` | `5` | Subida de ganho |
-| `agc_release_ms` | `100` | Descida de ganho |
-| `limiter_ceiling_dbfs` | `-3` | Teto anti-clipping |
+Ordem fixa em [`VoiceChannelStrip`](../../include/voiceqas/audio/dsp/channel_strip.hpp):
 
-- Estado **por sessão** (`AgcState` em `SessionManager` e `MediaSessionManager`)
-- Latência típica: **+15–30 ms**
-- **Não** aplicado na saída do agente (apenas limitador de pico)
+**NR → HPF → EQ → De-esser → Compressor → Limiter → AGC**
+
+| Estágio | Default | Knobs principais |
+|---------|---------|------------------|
+| NR (RNNoise) | **off** | `wet_dry` (0–1) |
+| HPF | on | `cutoff_hz` 80 |
+| EQ | on (mild) | 4 peaking (-1.5@250, -1@450, +1@2500, +1@3500) |
+| De-esser | **off** | 6.5 kHz, thr −25, ratio 3:1 |
+| Compressor | on (soft) | thr -20, ratio 2:1, makeup 0 |
+| Limiter | on | ceiling **−1 dBFS** |
+| AGC | on | target **−18 dBFS RMS**, max 24 dB |
+
+Aliases legados: `normalize_enabled` ↔ `strip.agc.enabled`; `enhancement.enabled` ↔ `strip.nr.enabled`.
+
+- Estado **por sessão** no media ingress / VQA; efêmero em `prepare_audio_for_stt` / batch
+- Analysis Lab envia knobs via header `X-Audio-Strip` (JSON)
+- RNNoise: resample → 48 kHz; requer `VOICEQAS_HAS_RNNOISE`; sem lib = no-op
+- Env: `VOICEQAS_AUDIO_NORMALIZE=0`, `VOICEQAS_AUDIO_ENHANCEMENT=0`
+- Egress do agente: só peak limiter (sem strip completa)
 
 ### Fork VQA / STT
 
-- **VQA:** `VoiceAnalyzer` na taxa nativa do codec (8 ou 16 kHz); VAD energético para métricas
-- **STT:** `prepare_audio_for_stt` → resample linear 16 kHz → sherpa-onnx
+- **VQA:** `VoiceAnalyzer` na taxa nativa do codec (8 ou 16 kHz); score = `speech_quality_score` (sem penalidade de silêncio); presença via `max_silence_ratio_for_ready` (default 0.40)
+- **STT:** resample 16 kHz → Silero turnos + `diarization.focus_primary` → sherpa-onnx
 
 ### Ingress unificado (media relay)
 
-`RtpIngressProcessor` ([`include/voiceqas/media/rtp_ingress.hpp`](../../include/voiceqas/media/rtp_ingress.hpp)) mantém estado de `RtpDepacketizer` por sessão e chama `audio::decode_to_pcm` uma vez por pacote. O PCM normalizado é distribuído em paralelo:
+`RtpIngressProcessor` mantém `RtpDepacketizer` + `VoiceChannelStrip` por sessão: decode uma vez, strip compartilhada, depois fan-out do **mesmo** PCM:
 
 | Destino | API | Uso |
 |---------|-----|-----|
-| VQA | `VqaSessionManager::push_pcm` | janelas de qualidade + telemetria pipeline |
-| STT | `SttSessionManager::append_pcm` | buffer + parciais incrementais |
+| VQA | `VqaSessionManager::push_pcm(..., apply_agc=false)` | sem strip duplicada |
+| STT | `SttSessionManager::append_pcm(..., shared_agc_ms, shared_enhancement_ms)` | telemetria NR/AGC |
 
-Timer periódico no `media_relay` chama `emit_partials_for_all_sessions()` (substitui decode duplicado no caminho STT).
+Timer periódico no `media_relay` chama `emit_partials_for_all_sessions()`.
+
+Caminhos REST/WS/gRPC chunk/batch usam `prepare_audio_for_stt` (strip + resample 16 kHz).
 
 ### Targets CMake
 
@@ -125,7 +138,7 @@ O interlocutor **nunca** passa por re-encode G.711.
 
 Fluxo:
 
-- **Inbound:** pacote RTP → `RtpIngressProcessor` (decode único) → fan-out PCM para `VqaSessionManager::push_pcm` e `SttSessionManager::append_pcm`
+- **Inbound:** pacote RTP → `RtpIngressProcessor` (decode + channel strip) → fan-out PCM para `VqaSessionManager::push_pcm(apply_agc=false)` e `SttSessionManager::append_pcm`
 - **Outbound:** `POST .../agent-audio` → encode → UDP
 
 Integração SBC: voiceqas é **media plane only** (sem SIP INVITE/SDP). O SBC roteia RTP para `host:10000` e recebe RTP do agente no `remote_host:port` registrado.
@@ -185,8 +198,10 @@ Resposta:
 |------|--------|
 | Stack SIP (INVITE/SDP) | Fora do escopo |
 | AEC (echo cancellation) | SBC upstream |
-| Silero VAD no STT C++ | **Ativo** (k2fsa default; v4/v5/int8 para teste) |
-| Enhancement neural (RNNoise) | Fase futura |
+| LPF dedicado / noise gate de amostras / AGC LUFS | Ausentes — ver [`dsp-stt-intelligibility-matrix.md`](dsp-stt-intelligibility-matrix.md) |
+| HPF / EQ / de-esser / compressor / limiter / NR wet | **Ativos** em `audio.strip` + Analysis Lab |
+| Silero VAD no STT C++ | **Ativo** (turnos + focus_primary opcional) |
+| Enhancement neural (RNNoise) | **Ativo** no Docker Linux (vcpkg); no-op sem lib |
 | Re-encode interlocutor | Proibido por design |
 
 ## Tuning
@@ -194,13 +209,14 @@ Resposta:
 | Sintoma | Ajuste |
 |---------|--------|
 | Voz baixa, `stt_ready` falso | `agc_target_rms_dbfs` mais alto (−18), `agc_max_gain_db` |
-| Ruído amplificado com AGC | Desligar AGC ou adicionar NS (futuro) |
+| Ruído de fundo | `audio.enhancement.enabled` + RNNoise |
 | Agente distorce no G.711 | Reduzir nível TTS; `limiter_ceiling_dbfs` |
-| WER alto com muito silêncio | Silero VAD (quando disponível) |
+| WER alto com segundo falante | `diarization.focus_primary: true` |
 
 ## Referências
 
 - VQA e métricas: [`voice-quality-assessment.md`](voice-quality-assessment.md)
+- Matriz DSP STT / inteligibilidade: [`dsp-stt-intelligibility-matrix.md`](dsp-stt-intelligibility-matrix.md)
 - Plano arquitetural: [`plan.md`](plan.md)
 - Dashboard Sankey (Grafana): `deploy/observability/grafana/dashboards/voiceqas-pipeline-sankey.json`
 
@@ -212,8 +228,8 @@ Publicada a cada janela VQA (~500 ms) como evento `pipeline_snapshot` e exposta 
 |---------|----------|
 | `rtp_ingress` | bytes, jitter_ms, packet_loss_pct |
 | `decode_vqa` / `agc_vqa` | latency_ms_p50/p95, bytes |
-| `enhancement` | stub pass-through (0 ms; RNNoise futuro) |
-| `vqa` | composite_score, snr_db, rms_dbfs, stt_ready |
+| `enhancement` | latency RNNoise (0 ms se disabled / sem lib) |
+| `vqa` | speech_quality/composite_score, snr_db, rms_dbfs, stt_ready |
 | `stt_gate` / `stt_dropped` | dropped_bytes quando `require_stt_ready` |
 | `decode_stt` → `asr` | latência por sub-etapa, buffer_ms, processing_ms |
 | `ai_agent` | nó virtual (STT in / PCM out) |
@@ -222,12 +238,9 @@ Publicada a cada janela VQA (~500 ms) como evento `pipeline_snapshot` e exposta 
 ```mermaid
 flowchart LR
     SIP_IN[SIP_in] --> RTP[RTP_ingress]
-    RTP --> DEC_VQA[Decode_VQA]
-    RTP --> DEC_STT[Decode_STT]
-    RTP --> DROP[STT_dropped]
-    DEC_VQA --> AGC_VQA --> ENH[Enhancement_stub] --> VQA --> GATE[STT_gate]
-    GATE --> DEC_STT
-    DEC_STT --> AGC_STT --> RS16 --> BUF --> VAD --> ASR --> AI[AI_Agent]
+    RTP --> DEC[Decode_shared]
+    DEC --> STRIP[ChannelStrip] --> VQA --> GATE[STT_gate]
+    GATE --> DROP[STT_dropped]
+    STRIP --> RS16 --> BUF --> VAD[Silero_primary] --> ASR --> AI[AI_Agent]
     AI --> PCM[Agent_PCM] --> RS_OUT --> LIM --> ENC --> PKT --> EGR[RTP_egress] --> SIP_OUT[SIP_out]
 ```
-

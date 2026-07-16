@@ -49,6 +49,10 @@ if [[ "${VOICEQAS_COVERAGE:-0}" == "1" ]]; then
   CMAKE_ARGS+=(-DVOICEQAS_COVERAGE=ON -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Debug}")
 fi
 
+if [[ "${VOICEQAS_PERF_BADASS:-0}" == "1" || "${VOICEQAS_PERF_BADASS:-}" == "ON" ]]; then
+  CMAKE_ARGS+=(-DVOICEQAS_PERF_BADASS=ON)
+fi
+
 echo ">> Instalando deps vcpkg (manifest)..."
 VCPKG_INSTALL_ARGS=(
   --triplet x64-linux

@@ -26,7 +26,10 @@ interface PipelinePanelProps {
   error: string | null;
   sessionFilter: string;
   onSessionFilterChange: (id: string) => void;
+  onChannelLink?: (channelId: string) => void;
 }
+
+type PipelineTab = 'inbound' | 'outbound' | 'transport' | 'dsp';
 
 function StageCard({
   node,
@@ -129,8 +132,10 @@ export function PipelinePanel({
   error,
   sessionFilter,
   onSessionFilterChange,
+  onChannelLink,
 }: PipelinePanelProps) {
   const [sessionIds, setSessionIds] = useState<string[]>([]);
+  const [tab, setTab] = useState<PipelineTab>('inbound');
 
   useEffect(() => {
     fetchPipelineSessions()
@@ -163,10 +168,16 @@ export function PipelinePanel({
         <div>
           <h2>Audio Pipeline</h2>
           <p className="muted cc-pipeline-sub">
-            Sankeys de transporte (SIP/REST/WS/gRPC → Media Pipeline → Ollama) + pipeline DSP detalhado.
+            Decode → Strip (NR→HPF→EQ→DeEss→Comp→Lim→AGC) → VAD → Diarization → VQA → STT
           </p>
         </div>
         <div className="cc-pipeline-meta">
+          <span className="badge ok">S15 default</span>
+          {onChannelLink && (
+            <button type="button" className="btn linkish" onClick={() => onChannelLink('default')}>
+              Ver perfil do canal
+            </button>
+          )}
           <span className={`badge ${transportLinks > 0 ? 'ok' : links > 0 ? 'ok' : ''}`}>
             {transportLinks > 0 ? `${transportLinks} transport links` : `${links} links ativos`}
           </span>
@@ -200,6 +211,19 @@ export function PipelinePanel({
 
       {error && <p className="error">{error}</p>}
 
+      <div className="cc-pipeline-tabs">
+        {(['inbound', 'outbound', 'transport', 'dsp'] as PipelineTab[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={`btn ${tab === t ? 'primary' : ''}`}
+            onClick={() => setTab(t)}
+          >
+            {t === 'inbound' ? 'Inbound' : t === 'outbound' ? 'Outbound' : t === 'transport' ? 'Transport' : 'DSP Sankey'}
+          </button>
+        ))}
+      </div>
+
       {!error && !loading && links === 0 && transportLinks === 0 && (
         <p className="cc-empty muted">
           Sem tráfego no pipeline. Use o <a href="#tester">Tester</a> ou rode{' '}
@@ -207,6 +231,7 @@ export function PipelinePanel({
         </p>
       )}
 
+      {tab === 'transport' && (
       <div className="cc-transport-sankey-grid">
         <div className="cc-sankey-wrap">
           <h3 className="cc-sankey-title">Inbound — Transport → Media Pipeline → AI Externa</h3>
@@ -217,14 +242,17 @@ export function PipelinePanel({
           <PipelineSankeyChart option={outboundTransportOption} height={320} />
         </div>
       </div>
+      )}
 
+      {tab === 'dsp' && (
       <div className="cc-sankey-wrap">
         <h3 className="cc-sankey-title">Pipeline DSP (detalhe interno)</h3>
         <PipelineSankeyChart option={sankeyOption} height={440} />
       </div>
+      )}
 
-      <StageRow title="Inbound" stageIds={INBOUND_STAGES} snapshot={snapshot} />
-      <StageRow title="Outbound" stageIds={OUTBOUND_STAGES} snapshot={snapshot} />
+      {tab === 'inbound' && <StageRow title="Inbound" stageIds={INBOUND_STAGES} snapshot={snapshot} />}
+      {tab === 'outbound' && <StageRow title="Outbound" stageIds={OUTBOUND_STAGES} snapshot={snapshot} />}
     </section>
   );
 }

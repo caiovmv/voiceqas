@@ -214,3 +214,9 @@ Produção deve usar gRPC na porta 50051.
 # opcional: editar overrides em vcpkg.json
 ./.vcpkg/vcpkg upgrade --no-dry-run
 ```
+
+## License
+
+This project is licensed under the **Apache License, Version 2.0**. See [`LICENSE`](LICENSE).
+
+Third-party attributions (SpanDSP LGPL-2.1, RNNoise, sherpa-onnx, codecs, UI deps, etc.) are listed in [`NOTICE`](NOTICE).

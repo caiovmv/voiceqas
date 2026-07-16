@@ -9,6 +9,8 @@
 
 #include "sherpa-onnx/c-api/c-api.h"
 
+#include "voiceqas/stt/diarization.hpp"
+
 namespace voiceqas::stt {
 
 struct VadConfig {
@@ -37,9 +39,22 @@ public:
 
     std::vector<int16_t> extract_speech(std::span<const int16_t> pcm, int sample_rate) const;
 
+    /** Speech turns at 16 kHz timeline (start/end ms relative to resampled buffer). */
+    std::vector<SpeechTurn> detect_turns(std::span<const int16_t> pcm, int sample_rate) const;
+
+    /**
+     * Turn diarization + optional primary filter. Returns primary PCM at 16 kHz
+     * (or all speech if focus_primary is false).
+     */
+    DiarizationResult diarize(
+        std::span<const int16_t> pcm,
+        int sample_rate,
+        const DiarizationConfig& config) const;
+
 private:
     VadConfig config_;
     const SherpaOnnxVoiceActivityDetector* detector_ = nullptr;
+    mutable std::recursive_mutex mutex_;
 };
 
 }  // namespace voiceqas::stt

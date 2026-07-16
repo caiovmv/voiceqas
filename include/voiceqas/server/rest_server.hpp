@@ -6,6 +6,7 @@
 
 #include "voiceqas/analyzer.hpp"
 #include "voiceqas/audio/config.hpp"
+#include "voiceqas/config/channel_registry.hpp"
 #include "voiceqas/media/session.hpp"
 #include "voiceqas/stt/session_manager.hpp"
 
@@ -20,7 +21,8 @@ public:
                std::shared_ptr<VqaSessionManager> sessions,
                std::shared_ptr<stt::SttSessionManager> stt_sessions,
                std::shared_ptr<media::MediaSessionManager> media_sessions = nullptr,
-               std::string grpc_target = "127.0.0.1:50051");
+               std::string grpc_target = "127.0.0.1:50051",
+               std::shared_ptr<config::ChannelRegistry> channel_registry = nullptr);
     void run();
     void stop();
 
@@ -33,6 +35,7 @@ private:
     std::shared_ptr<VqaSessionManager> sessions_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
     std::shared_ptr<media::MediaSessionManager> media_sessions_;
+    std::shared_ptr<config::ChannelRegistry> channel_registry_;
     std::thread thread_;
     bool running_ = false;
 };

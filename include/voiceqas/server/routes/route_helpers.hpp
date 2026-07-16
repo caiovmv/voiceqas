@@ -12,6 +12,8 @@
 
 #include "voiceqas/audio/decoder.hpp"
 #include "voiceqas/audio/encoder.hpp"
+#include "voiceqas/audio/config.hpp"
+#include "voiceqas/audio/strip_json.hpp"
 #include "voiceqas/metrics.hpp"
 #include "voiceqas/rtp/depacketizer.hpp"
 #include "voiceqas/rtp/packetizer.hpp"
@@ -39,6 +41,39 @@ inline std::optional<std::string> telemetry_session_id_from_request(const httpli
         return header;
     }
     return std::nullopt;
+}
+
+inline std::optional<bool> bool_header(const httplib::Request& req, const char* name) {
+    if (!req.has_header(name)) {
+        return std::nullopt;
+    }
+    const auto v = req.get_header_value(name);
+    if (v == "1" || v == "true" || v == "TRUE" || v == "on" || v == "yes") {
+        return true;
+    }
+    if (v == "0" || v == "false" || v == "FALSE" || v == "off" || v == "no") {
+        return false;
+    }
+    return std::nullopt;
+}
+
+inline audio::AudioProcessingConfig audio_config_from_request(
+    const httplib::Request& req,
+    audio::AudioProcessingConfig base) {
+    if (req.has_header("X-Audio-Strip")) {
+        audio::merge_strip_json_string(base.strip, req.get_header_value("X-Audio-Strip"));
+        base.sync_legacy_from_strip();
+    }
+    if (const auto v = bool_header(req, "X-Audio-AGC")) {
+        base.normalize_enabled = *v;
+        base.strip.agc.enabled = *v;
+    }
+    if (const auto v = bool_header(req, "X-Audio-Enhancement")) {
+        base.enhancement.enabled = *v;
+        base.strip.nr.enabled = *v;
+    }
+    base.sync_legacy_from_strip();
+    return base;
 }
 
 inline AudioFormat format_from_header(const httplib::Request& req) {

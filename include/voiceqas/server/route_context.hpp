@@ -5,6 +5,7 @@
 
 #include "voiceqas/analyzer.hpp"
 #include "voiceqas/audio/config.hpp"
+#include "voiceqas/config/channel_registry.hpp"
 #include "voiceqas/media/session.hpp"
 #include "voiceqas/stt/session_manager.hpp"
 
@@ -19,6 +20,7 @@ struct RouteContext {
     std::shared_ptr<VqaSessionManager> sessions;
     std::shared_ptr<stt::SttSessionManager> stt_sessions;
     std::shared_ptr<media::MediaSessionManager> media_sessions;
+    std::shared_ptr<config::ChannelRegistry> channel_registry;
 };
 
 }  // namespace voiceqas

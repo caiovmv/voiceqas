@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "voiceqas/audio/decoder.hpp"
+#include "voiceqas/audio/dsp/channel_strip.hpp"
 #include "voiceqas/rtp/depacketizer.hpp"
 #include "voiceqas/stt_gate.hpp"
 
@@ -60,6 +61,99 @@ double frame_clipping_ratio(std::span<const int16_t> samples) {
         }
     }
     return static_cast<double>(clipped) / static_cast<double>(samples.size());
+}
+
+double speech_weight(const WindowMetrics& w) {
+    return std::max(0.0, 1.0 - w.silence_ratio);
+}
+
+WindowMetrics aggregate_speech_windows(const std::vector<WindowMetrics>& speech) {
+    WindowMetrics out;
+    if (speech.empty()) {
+        return out;
+    }
+
+    double total_w = 0.0;
+    for (const auto& w : speech) {
+        total_w += speech_weight(w);
+    }
+    const bool equal_weight = total_w < 1e-12;
+    if (equal_weight) {
+        total_w = static_cast<double>(speech.size());
+    }
+
+    double rms = 0.0;
+    double peak = kMinDb;
+    double clip = 0.0;
+    double snr = 0.0;
+    double silence = 0.0;
+    double flatness = 0.0;
+    double loss = 0.0;
+    double jitter = 0.0;
+    double score = 0.0;
+    double ready_w = 0.0;
+
+    for (const auto& w : speech) {
+        const double wgt = equal_weight ? 1.0 : speech_weight(w);
+        rms += w.rms_dbfs * wgt;
+        peak = std::max(peak, w.peak_dbfs);
+        clip += w.clipping_ratio * wgt;
+        snr += w.snr_estimate_db * wgt;
+        silence += w.silence_ratio * wgt;
+        flatness += w.spectral_flatness * wgt;
+        loss += w.packet_loss_pct * wgt;
+        jitter += w.jitter_ms * wgt;
+        score += w.speech_quality_score * wgt;
+        if (w.stt_ready) {
+            ready_w += wgt;
+        }
+    }
+
+    out.window_start_ms = speech.front().window_start_ms;
+    out.rms_dbfs = rms / total_w;
+    out.peak_dbfs = peak;
+    out.clipping_ratio = clip / total_w;
+    out.snr_estimate_db = snr / total_w;
+    out.silence_ratio = silence / total_w;
+    out.spectral_flatness = flatness / total_w;
+    out.packet_loss_pct = loss / total_w;
+    out.jitter_ms = jitter / total_w;
+    out.speech_quality_score = score / total_w;
+    out.composite_score = out.speech_quality_score;
+    out.stt_ready = (ready_w / total_w) >= 0.5;
+    return out;
+}
+
+double estimate_stt_risk(const std::vector<WindowMetrics>& speech) {
+    if (speech.empty()) {
+        return 1.0;
+    }
+    double sum = 0.0;
+    for (const auto& w : speech) {
+        const double snr_term = std::clamp((20.0 - w.snr_estimate_db) / 20.0, 0.0, 1.0);
+        const double clip_term = std::clamp(w.clipping_ratio / 0.05, 0.0, 1.0);
+        const double quality_term =
+            std::clamp((70.0 - w.speech_quality_score) / 70.0, 0.0, 1.0);
+        sum += 0.45 * snr_term + 0.25 * clip_term + 0.30 * quality_term;
+    }
+    return std::clamp(sum / static_cast<double>(speech.size()), 0.0, 1.0);
+}
+
+double compute_snr_std(const std::vector<WindowMetrics>& speech) {
+    if (speech.size() < 2) {
+        return 0.0;
+    }
+    double mean = 0.0;
+    for (const auto& w : speech) {
+        mean += w.snr_estimate_db;
+    }
+    mean /= static_cast<double>(speech.size());
+    double var = 0.0;
+    for (const auto& w : speech) {
+        const double d = w.snr_estimate_db - mean;
+        var += d * d;
+    }
+    return std::sqrt(var / static_cast<double>(speech.size() - 1));
 }
 
 }  // namespace
@@ -233,12 +327,26 @@ BatchResult VoiceAnalyzer::analyze_pcm_batch(std::span<const int16_t> samples, i
         return result;
     }
 
-    double score_sum = 0.0;
-    for (const auto& w : result.windows) {
-        score_sum += w.composite_score;
-    }
-    result.composite_score = score_sum / static_cast<double>(result.windows.size());
     result.aggregated = result.windows.back();
+
+    for (const auto& w : result.windows) {
+        if (w.silence_ratio <= batch_config.max_silence_ratio) {
+            result.speech_windows.push_back(w);
+        }
+        if (w.stt_ready) {
+            ++result.ready_window_count;
+        }
+    }
+    result.speech_window_count = static_cast<int>(result.speech_windows.size());
+    result.speech_aggregated = aggregate_speech_windows(result.speech_windows);
+    // Session composite = speech-only quality (silence no longer pulls the average down).
+    result.composite_score = result.speech_window_count > 0
+                                 ? result.speech_aggregated.composite_score
+                                 : 0.0;
+    result.ready_ratio = static_cast<double>(result.ready_window_count) /
+                         static_cast<double>(result.windows.size());
+    result.snr_std = compute_snr_std(result.speech_windows);
+    result.stt_risk = estimate_stt_risk(result.speech_windows);
 
     int64_t seg_start = -1;
     for (const auto& w : result.windows) {
@@ -287,7 +395,7 @@ std::optional<WindowMetrics> VqaSessionManager::push_frame(
         cfg.sample_rate = rate;
         session.analyzer = VoiceAnalyzer(cfg);
         session.rtp = rtp::RtpDepacketizer(rtp_clock_rate_for_format(format));
-        session.agc = audio::AgcState(audio_config_);
+        session.strip = audio::VoiceChannelStrip(audio_config_);
     }
 
     const auto decode_started = std::chrono::steady_clock::now();
@@ -305,15 +413,15 @@ std::optional<WindowMetrics> VqaSessionManager::push_frame(
 
     auto pcm = std::move(decoded.pcm);
     double agc_ms = 0.0;
-    if (audio_config_.normalize_enabled && !pcm.empty()) {
-        tracing::StageSpan agc_span("agc_vqa", "AGC Normalize", session_id);
-        agc_span.set_bytes_in(pcm.size() * sizeof(int16_t));
-        const auto agc_started = std::chrono::steady_clock::now();
-        session.agc.process_inplace(pcm, rate);
-        agc_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - agc_started)
-                     .count();
-        agc_span.set_metric("voiceqas.duration_ms", agc_ms);
-        agc_span.set_bytes_out(pcm.size() * sizeof(int16_t));
+    double enhancement_ms = 0.0;
+    if (!pcm.empty()) {
+        tracing::StageSpan strip_span("dsp_strip_vqa", "Channel strip VQA", session_id);
+        strip_span.set_bytes_in(pcm.size() * sizeof(int16_t));
+        const auto timings = session.strip.process_inplace(pcm, rate);
+        agc_ms = timings.agc_ms;
+        enhancement_ms = timings.nr_ms;
+        strip_span.set_metric("voiceqas.duration_ms", agc_ms + enhancement_ms);
+        strip_span.set_bytes_out(pcm.size() * sizeof(int16_t));
     }
     telemetry_->record_rtp_ingress(
         session_id,
@@ -326,6 +434,7 @@ std::optional<WindowMetrics> VqaSessionManager::push_frame(
         pcm.size() * sizeof(int16_t),
         decode_ms,
         agc_ms,
+        enhancement_ms,
         decoded.rtp_stats.jitter_ms,
         decoded.rtp_stats.packet_loss_pct);
     session.analyzer->set_rtp_metrics(decoded.rtp_stats.packet_loss_pct, decoded.rtp_stats.jitter_ms);
@@ -345,17 +454,20 @@ std::optional<WindowMetrics> VqaSessionManager::push_pcm(
     const std::string& session_id,
     std::span<const int16_t> pcm,
     int64_t timestamp_ms,
-    int sample_rate) {
+    int sample_rate,
+    bool apply_agc) {
     std::unique_lock lock(mutex_);
     auto& session = sessions_[session_id];
     if (!session.analyzer || session.analyzer->config().sample_rate != sample_rate) {
         AnalyzerConfig cfg = default_config_;
         cfg.sample_rate = sample_rate;
         session.analyzer = VoiceAnalyzer(cfg);
+        session.strip = audio::VoiceChannelStrip(audio_config_);
     }
     std::vector<int16_t> copy(pcm.begin(), pcm.end());
-    if (audio_config_.normalize_enabled && !copy.empty()) {
-        session.agc.process_inplace(copy, sample_rate);
+    // Shared ingress already ran the channel strip when apply_agc=false.
+    if (apply_agc && !copy.empty()) {
+        session.strip.process_inplace(copy, sample_rate);
     }
     if (auto report = session.analyzer->push_pcm(copy, timestamp_ms)) {
         metrics_->publish_vqa(session_id, *report);
@@ -368,7 +480,8 @@ BatchResult VqaSessionManager::analyze_batch(
     AudioFormat format,
     std::span<const uint8_t> payload,
     int sample_rate,
-    const std::optional<std::string>& telemetry_session_id) {
+    const std::optional<std::string>& telemetry_session_id,
+    const std::optional<audio::AudioProcessingConfig>& audio_override) {
     const std::string session_id = telemetry_session_id.value_or(
         "vqa-batch-" + std::to_string(
             std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -376,6 +489,9 @@ BatchResult VqaSessionManager::analyze_batch(
     AnalyzerConfig cfg = default_config_;
     cfg.sample_rate = sample_rate > 0 ? sample_rate : sample_rate_for_format(format);
     VoiceAnalyzer analyzer(cfg);
+
+    const audio::AudioProcessingConfig& audio_cfg =
+        audio_override.has_value() ? *audio_override : audio_config_;
 
     rtp::RtpDepacketizer depacketizer(rtp_clock_rate_for_format(format));
     const auto decoded = audio::decode_to_pcm(format, payload, &depacketizer);
@@ -393,13 +509,14 @@ BatchResult VqaSessionManager::analyze_batch(
     auto pcm = decoded.pcm;
     const auto pcm_bytes = pcm.size() * sizeof(int16_t);
     double agc_ms = 0.0;
-    if (audio_config_.normalize_enabled && !pcm.empty()) {
-        const auto agc_started = std::chrono::steady_clock::now();
-        audio::AgcState agc(audio_config_);
-        agc.process_inplace(pcm, cfg.sample_rate);
-        agc_ms = std::chrono::duration<double, std::milli>(
-                     std::chrono::steady_clock::now() - agc_started)
-                     .count();
+    double enhancement_ms = 0.0;
+    if (!pcm.empty()) {
+        audio::AudioProcessingConfig strip_cfg = audio_cfg;
+        strip_cfg.sync_legacy_from_strip();
+        audio::VoiceChannelStrip strip(strip_cfg);
+        const auto timings = strip.process_inplace(pcm, cfg.sample_rate);
+        agc_ms = timings.agc_ms;
+        enhancement_ms = timings.nr_ms;
     }
     telemetry_->record_vqa_path(
         session_id,
@@ -407,6 +524,7 @@ BatchResult VqaSessionManager::analyze_batch(
         pcm_bytes,
         0.0,
         agc_ms,
+        enhancement_ms,
         decoded.rtp_stats.jitter_ms,
         decoded.rtp_stats.packet_loss_pct);
     analyzer.set_rtp_metrics(decoded.rtp_stats.packet_loss_pct, decoded.rtp_stats.jitter_ms);

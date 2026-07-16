@@ -26,7 +26,7 @@ function parseArgs(argv) {
 
   let iterations = 1;
 
-  let maxParallel = 16;
+  let maxParallel = 12;
 
   let rampUp = false;
   let startFrom = 1;
@@ -45,7 +45,7 @@ function parseArgs(argv) {
 
     } else if (arg === '--max-parallel' || arg === '-p') {
 
-      maxParallel = Math.max(1, Number(argv[++i] ?? 16));
+      maxParallel = Math.max(1, Number(argv[++i] ?? 12));
 
     } else if (arg.startsWith('--max-parallel=')) {
 

@@ -1,0 +1,133 @@
+{
+  "at": "2026-07-08T20:03:54.798Z",
+  "cc": "http://127.0.0.1:3000",
+  "audioSec": 2,
+  "results": [
+    {
+      "status": "PASS",
+      "name": "Capabilities",
+      "detail": "health=ok stt=ready models=[parakeet,whisper] providers=[cpu,cuda] cuda_compiled=true grpc=ok",
+      "at": "2026-07-08T20:03:24.530Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT REST · parakeet · cpu",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=62 textLen=0 wall=73ms",
+      "at": "2026-07-08T20:03:24.607Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT REST · parakeet · cuda",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=3404 textLen=0 wall=3411ms",
+      "at": "2026-07-08T20:03:28.018Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT REST · whisper · cpu",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=870 textLen=4 wall=876ms",
+      "at": "2026-07-08T20:03:28.895Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT REST · whisper · cuda",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=6921 textLen=4 wall=6929ms",
+      "at": "2026-07-08T20:03:35.824Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT WS · parakeet · cpu",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=79 textLen=2 wall=1220ms",
+      "at": "2026-07-08T20:03:37.044Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT WS · parakeet · cuda",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=259 textLen=0 wall=1707ms",
+      "at": "2026-07-08T20:03:38.751Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT WS · whisper · cpu",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=1091 textLen=4 wall=2441ms",
+      "at": "2026-07-08T20:03:41.192Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT WS · whisper · cuda",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=984 textLen=4 wall=2044ms",
+      "at": "2026-07-08T20:03:43.237Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT GRPC-HTTP · parakeet · cpu",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=63 textLen=0 wall=95ms",
+      "at": "2026-07-08T20:03:43.332Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT GRPC-HTTP · parakeet · cuda",
+      "detail": "model=parakeet-tdt-0.6b-v3-int8 processing_ms=168 textLen=0 wall=233ms",
+      "at": "2026-07-08T20:03:43.565Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT GRPC-HTTP · whisper · cpu",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=803 textLen=4 wall=862ms",
+      "at": "2026-07-08T20:03:44.427Z"
+    },
+    {
+      "status": "PASS",
+      "name": "STT GRPC-HTTP · whisper · cuda",
+      "detail": "model=whisper-large-v3-turbo-pt processing_ms=1010 textLen=4 wall=1080ms",
+      "at": "2026-07-08T20:03:45.507Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS Pipeline Sankey",
+      "detail": "nodes=22 links=18 echarts.links=18",
+      "at": "2026-07-08T20:03:53.512Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS RED REST",
+      "detail": "rps=0.591 (Beyla)",
+      "at": "2026-07-08T20:03:53.520Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS RED/APM WebSocket",
+      "detail": "spanmetrics WS rps=0.261",
+      "at": "2026-07-08T20:03:53.522Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS RED/APM gRPC",
+      "detail": "otel=0.0037116544919177812 beyla=0.0045199731965589445",
+      "at": "2026-07-08T20:03:53.525Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS APM REST STT",
+      "detail": "traces=5 sample spans=5 pipeline_child=4",
+      "at": "2026-07-08T20:03:53.733Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS APM WebSocket",
+      "detail": "traces=5 sample spans=4 pipeline_child=3",
+      "at": "2026-07-08T20:03:53.924Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS APM pipeline spans",
+      "detail": "traces=5 sample spans=4 pipeline_child=3",
+      "at": "2026-07-08T20:03:54.094Z"
+    },
+    {
+      "status": "PASS",
+      "name": "OBS ASR history",
+      "detail": "stt_final=76",
+      "at": "2026-07-08T20:03:54.798Z"
+    }
+  ]
+}

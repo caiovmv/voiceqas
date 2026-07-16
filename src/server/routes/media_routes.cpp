@@ -30,6 +30,7 @@ void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
                     {"remote_port", cfg.remote_port},
                     {"inbound_host", cfg.inbound_host},
                     {"inbound_port", cfg.inbound_port},
+                    {"channel_id", cfg.channel_id},
                 });
             }
             res.set_content(nlohmann::json{{"status", "ok"}, {"sessions", sessions}}.dump(), "application/json");
@@ -56,6 +57,7 @@ void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
                 cfg.inbound_port = static_cast<uint16_t>(body.value("inbound_port", 0));
                 cfg.inbound_ssrc = static_cast<uint32_t>(body.value("inbound_ssrc", 0));
                 cfg.outbound_ssrc = static_cast<uint32_t>(body.value("outbound_ssrc", 0));
+                cfg.channel_id = body.value("channel_id", "default");
 
                 std::string error;
                 if (!ctx.media_sessions->open_session(cfg, error)) {
@@ -73,6 +75,7 @@ void register_media_routes(httplib::Server& server, const RouteContext& ctx) {
                     {"session_id", cfg.session_id},
                     {"format", static_cast<int>(cfg.format)},
                     {"sample_rate", cfg.sample_rate},
+                    {"channel_id", cfg.channel_id},
                 }.dump(), "application/json");
             } catch (const std::exception& e) {
                 res.status = 400;

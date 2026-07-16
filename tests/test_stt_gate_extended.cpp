@@ -11,10 +11,11 @@ TEST(SttGateExtendedTest, RtpPenaltyReducesScore) {
     SttGate gate(cfg);
 
     WindowMetrics good;
-    good.composite_score = 80;
     good.silence_ratio = 0.1;
     good.clipping_ratio = 0.0;
     good.snr_estimate_db = 20;
+    good.rms_dbfs = -20;
+    good.spectral_flatness = 0.2;
     good.packet_loss_pct = 0.0;
 
     WindowMetrics loss = good;

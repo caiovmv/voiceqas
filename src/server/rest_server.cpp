@@ -34,7 +34,8 @@ RestServer::RestServer(
     std::shared_ptr<VqaSessionManager> sessions,
     std::shared_ptr<stt::SttSessionManager> stt_sessions,
     std::shared_ptr<media::MediaSessionManager> media_sessions,
-    std::string grpc_target)
+    std::string grpc_target,
+    std::shared_ptr<config::ChannelRegistry> channel_registry)
     : bind_addr_(std::move(bind_addr)),
       web_root_(std::move(web_root)),
       openapi_path_(std::move(openapi_path)),
@@ -42,7 +43,8 @@ RestServer::RestServer(
       media_config_(std::move(media_config)),
       sessions_(std::move(sessions)),
       stt_sessions_(std::move(stt_sessions)),
-      media_sessions_(std::move(media_sessions)) {}
+      media_sessions_(std::move(media_sessions)),
+      channel_registry_(std::move(channel_registry)) {}
 
 void RestServer::run() {
     const auto colon = bind_addr_.rfind(':');
@@ -58,7 +60,7 @@ void RestServer::run() {
         res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         res.set_header(
             "Access-Control-Allow-Headers",
-            "Content-Type, X-Sample-Rate, X-Audio-Format, X-Language, X-STT-Model, X-STT-Provider, X-Session-Id, X-Ops-Token, traceparent, tracestate");
+            "Content-Type, X-Sample-Rate, X-Audio-Format, X-Language, X-STT-Model, X-STT-Provider, X-STT-Diarization, X-STT-Focus-Primary, X-Audio-AGC, X-Audio-Enhancement, X-Audio-Strip, X-Session-Id, X-Ops-Token, traceparent, tracestate");
         if (req.method == "OPTIONS") {
             res.status = 204;
             return httplib::Server::HandlerResponse::Handled;
@@ -88,6 +90,7 @@ void RestServer::run() {
         .sessions = sessions_,
         .stt_sessions = stt_sessions_,
         .media_sessions = media_sessions_,
+        .channel_registry = channel_registry_,
     };
     routes::register_all_routes(*server, ctx);
 

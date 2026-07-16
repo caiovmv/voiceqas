@@ -7,6 +7,7 @@
 
 #include "voiceqas/analyzer.hpp"
 #include "voiceqas/config.hpp"
+#include "voiceqas/config/channel_registry.hpp"
 #include "voiceqas/media/session.hpp"
 #include "voiceqas/ops/adapters/ops_ports.hpp"
 #include "voiceqas/ops/external_ai_config.hpp"
@@ -54,6 +55,9 @@ int main(int argc, char** argv) {
     auto media_sessions = std::make_shared<voiceqas::media::MediaSessionManager>(
         app_cfg.audio, app_cfg.media, telemetry);
 
+    auto channel_registry = std::make_shared<voiceqas::config::ChannelRegistry>(
+        app_cfg.server.channels_config_path, app_cfg.audio, app_cfg.stt);
+
     voiceqas::RestServer rest(
         app_cfg.server.rest_addr,
         app_cfg.server.web_root,
@@ -62,7 +66,8 @@ int main(int argc, char** argv) {
         sessions,
         stt_sessions,
         media_sessions,
-        voiceqas::server::local_grpc_target(app_cfg.server.grpc_addr));
+        voiceqas::server::local_grpc_target(app_cfg.server.grpc_addr),
+        channel_registry);
     voiceqas::WebSocketServer ws(app_cfg.server.ws_addr, sessions, stt_sessions);
 
     std::unique_ptr<voiceqas::MediaRelayServer> media_relay;
@@ -70,10 +75,12 @@ int main(int argc, char** argv) {
         media_relay = std::make_unique<voiceqas::MediaRelayServer>(
             app_cfg.server.media_rtp_addr,
             app_cfg.media,
+            app_cfg.audio,
             media_sessions,
             sessions,
             stt_sessions,
-            telemetry);
+            telemetry,
+            channel_registry);
         media_sessions->set_route_callback(
             [&media_relay](const std::string& host, uint16_t port, const std::string& session_id, bool bind) {
                 if (!media_relay) {

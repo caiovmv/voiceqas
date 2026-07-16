@@ -8,10 +8,10 @@ namespace voiceqas {
 SttGate::SttGate(const AnalyzerConfig& config) : config_(config) {}
 
 double SttGate::composite_score(const WindowMetrics& m) const {
+    // Quality-only: silence is presence, gated separately via max_silence_ratio_for_ready.
     double score = 100.0;
 
     score -= std::clamp(m.clipping_ratio / std::max(config_.max_clipping_ratio, 1e-6), 0.0, 1.0) * 30.0;
-    score -= std::clamp(m.silence_ratio / std::max(config_.max_silence_ratio, 1e-6), 0.0, 1.0) * 25.0;
 
     const double snr_factor = std::clamp(m.snr_estimate_db / std::max(config_.min_snr_db, 1e-6), 0.0, 1.5);
     score = score * (0.5 + 0.5 * snr_factor);
@@ -30,14 +30,16 @@ double SttGate::composite_score(const WindowMetrics& m) const {
 }
 
 bool SttGate::passes_thresholds(const WindowMetrics& m) const {
-    return m.composite_score >= config_.stt_ready_threshold
-        && m.silence_ratio <= config_.max_silence_ratio
+    const double silence_cap = config_.max_silence_ratio_for_ready;
+    return m.speech_quality_score >= config_.stt_ready_threshold
+        && m.silence_ratio <= silence_cap
         && m.clipping_ratio <= config_.max_clipping_ratio
         && m.snr_estimate_db >= config_.min_snr_db;
 }
 
 bool SttGate::evaluate(WindowMetrics& metrics) {
-    metrics.composite_score = composite_score(metrics);
+    metrics.speech_quality_score = composite_score(metrics);
+    metrics.composite_score = metrics.speech_quality_score;
 
     if (passes_thresholds(metrics)) {
         consecutive_ok_++;

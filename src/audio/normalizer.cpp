@@ -82,8 +82,7 @@ void AgcState::process_inplace(std::span<int16_t> samples, int sample_rate) {
         const double scaled = static_cast<double>(s) * gain_linear_;
         s = static_cast<int16_t>(std::clamp(static_cast<long long>(std::llround(scaled)), -32768LL, 32767LL));
     }
-
-    apply_peak_limiter_inplace(samples);
+    // Peak limiting is a separate ChannelStrip stage (or egress apply_peak_limiter).
 }
 
 void normalize_pcm_inplace(

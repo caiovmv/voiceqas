@@ -1,0 +1,584 @@
+{
+  "at": "2026-07-08T20:03:19.753Z",
+  "cc": "http://127.0.0.1:3000",
+  "traffic": {
+    "sttStatus": 200,
+    "sttOk": true,
+    "sttProcessingMs": 167,
+    "wsOk": true,
+    "wsError": null
+  },
+  "results": [
+    {
+      "name": "1. Health / voiceqas_up",
+      "status": "PASS",
+      "detail": "REST ok + gauge=1"
+    },
+    {
+      "name": "2. Audio Pipeline Sankey data",
+      "status": "PASS",
+      "detail": "nodes=22 links=18 echarts.links=18 scope=fleet"
+    },
+    {
+      "name": "3. ASR / STT engine KPIs",
+      "status": "PASS",
+      "detail": "engine ready; SNR=40 dB; ASR-ready sessions=2 (0 sem janelas VQA ao vivo)"
+    },
+    {
+      "name": "4. ASR success/coverage (history)",
+      "status": "PASS",
+      "detail": "stt_final=76 withText=29 success≈38%"
+    },
+    {
+      "name": "5. RED REST (RPS + P95)",
+      "status": "PASS",
+      "detail": "rps=1.256 p95=1364.3ms (Beyla :8080)"
+    },
+    {
+      "name": "6. RED WebSocket",
+      "status": "PASS",
+      "detail": "Beyla:8081 rps=0.003508931986371308; OTel WS spanmetrics ainda 0"
+    },
+    {
+      "name": "7. RED gRPC",
+      "status": "WARN",
+      "detail": "Sem tráfego gRPC :9051 — painel gRPC (Beyla/OTel) fica vazio até haver chamadas (Tester gRPC ou grpcurl). Não é fake: é ausência de dados"
+    },
+    {
+      "name": "8. APM Trace list",
+      "status": "PASS",
+      "detail": "50 traces via TraceQL; amostra: GET /v1/ops/metrics/history, GET /v1/ops/pipeline/sessions, GET /v1/ops/pipeline/snapshot, *, GET /v1/media/sessions, WS /v1/stt/stream (blind search GETs≈40; rich=33)"
+    },
+    {
+      "name": "9. APM Waterfall / Spans",
+      "status": "PASS",
+      "detail": "trace=WS /v1/stt/stream spans=4 pipeline_child=3 voiceqas_attrs=true — waterfall rico OK"
+    },
+    {
+      "name": "10. APM Span Details",
+      "status": "PASS",
+      "detail": "root=WS /v1/stt/stream; attrs=7; pipeline child attrs=[voiceqas.stage,voiceqas.stage_label,voiceqas.session_id,voiceqas.bytes_in,voiceqas.duration_ms,voiceqas.bytes_out]; spanIdFormat=base64 (gzmevSiavZI=…)"
+    }
+  ],
+  "traces": [
+    {
+      "traceID": "7700cd0d5bd436dbf65e3eb89a9a9ed",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/metrics/history",
+      "startTimeUnixNano": "1783539731172545758",
+      "durationMs": 1149,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "7934fd1bfad20be8",
+            "name": "GET /v1/ops/metrics/history",
+            "startTimeUnixNano": "1783539731172545758",
+            "durationNanos": "1149858366",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "7934fd1bfad20be8",
+              "name": "GET /v1/ops/metrics/history",
+              "startTimeUnixNano": "1783539731172545758",
+              "durationNanos": "1149858366",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "5d4e1f2c48c7b618d1094eca0d87995",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/metrics/history",
+      "startTimeUnixNano": "1783539721093604671",
+      "durationMs": 1105,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "e49f24d0c4bf99a9",
+            "name": "GET /v1/ops/metrics/history",
+            "startTimeUnixNano": "1783539721093604671",
+            "durationNanos": "1105367660",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "e49f24d0c4bf99a9",
+              "name": "GET /v1/ops/metrics/history",
+              "startTimeUnixNano": "1783539721093604671",
+              "durationNanos": "1105367660",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "46eca1947c6d520b7bc51b5838f97aa",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/sessions",
+      "startTimeUnixNano": "1783539708113235773",
+      "durationMs": 8,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "0dea113d843f6d78",
+            "name": "GET /v1/ops/pipeline/sessions",
+            "startTimeUnixNano": "1783539708113235773",
+            "durationNanos": "8238734",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "0dea113d843f6d78",
+              "name": "GET /v1/ops/pipeline/sessions",
+              "startTimeUnixNano": "1783539708113235773",
+              "durationNanos": "8238734",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "43a2f30a87fa40126e04618463e62dc",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/sessions",
+      "startTimeUnixNano": "1783539696112291523",
+      "durationMs": 9,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "7af1634999d4c5bb",
+            "name": "GET /v1/ops/pipeline/sessions",
+            "startTimeUnixNano": "1783539696112291523",
+            "durationNanos": "9014462",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "7af1634999d4c5bb",
+              "name": "GET /v1/ops/pipeline/sessions",
+              "startTimeUnixNano": "1783539696112291523",
+              "durationNanos": "9014462",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "250c37e26f4c2cb2d4a46cd46837545",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/snapshot",
+      "startTimeUnixNano": "1783539693093980297",
+      "durationMs": 9,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "f05bb94ed9dfa532",
+            "name": "GET /v1/ops/pipeline/snapshot",
+            "startTimeUnixNano": "1783539693093980297",
+            "durationNanos": "9463961",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "f05bb94ed9dfa532",
+              "name": "GET /v1/ops/pipeline/snapshot",
+              "startTimeUnixNano": "1783539693093980297",
+              "durationNanos": "9463961",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "2705b03e9b24e9fa6813186d93dee46",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/sessions",
+      "startTimeUnixNano": "1783539678113987541",
+      "durationMs": 8,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "a33e39408a7f972f",
+            "name": "GET /v1/ops/pipeline/sessions",
+            "startTimeUnixNano": "1783539678113987541",
+            "durationNanos": "8464607",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "a33e39408a7f972f",
+              "name": "GET /v1/ops/pipeline/sessions",
+              "startTimeUnixNano": "1783539678113987541",
+              "durationNanos": "8464607",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "466bfa411ec734248beb8f96c47e41d",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/snapshot",
+      "startTimeUnixNano": "1783539672094113227",
+      "durationMs": 9,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "14e573f9bb437151",
+            "name": "GET /v1/ops/pipeline/snapshot",
+            "startTimeUnixNano": "1783539672094113227",
+            "durationNanos": "9808552",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "14e573f9bb437151",
+              "name": "GET /v1/ops/pipeline/snapshot",
+              "startTimeUnixNano": "1783539672094113227",
+              "durationNanos": "9808552",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "8dcd8e6e7b0c04ef0be0c261a0919f3",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "*",
+      "startTimeUnixNano": "1783539666445384684",
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "6df616de33b6fe5a",
+            "name": "*",
+            "startTimeUnixNano": "1783539666445384684",
+            "durationNanos": "654947",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "6df616de33b6fe5a",
+              "name": "*",
+              "startTimeUnixNano": "1783539666445384684",
+              "durationNanos": "654947",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "680251afb05b7dfb01e41c4d5db2970",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/snapshot",
+      "startTimeUnixNano": "1783539663093931589",
+      "durationMs": 9,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "c50e867f1abdcee2",
+            "name": "GET /v1/ops/pipeline/snapshot",
+            "startTimeUnixNano": "1783539663093931589",
+            "durationNanos": "9435891",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "c50e867f1abdcee2",
+              "name": "GET /v1/ops/pipeline/snapshot",
+              "startTimeUnixNano": "1783539663093931589",
+              "durationNanos": "9435891",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "4394b1ff558f08044f6207c916271ad",
+      "rootServiceName": "voiceqas",
+      "rootTraceName": "GET /v1/ops/pipeline/sessions",
+      "startTimeUnixNano": "1783539641962806211",
+      "durationMs": 8,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "76282afcd41d01ff",
+            "name": "GET /v1/ops/pipeline/sessions",
+            "startTimeUnixNano": "1783539641962806211",
+            "durationNanos": "8946773",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "voiceqas"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "76282afcd41d01ff",
+              "name": "GET /v1/ops/pipeline/sessions",
+              "startTimeUnixNano": "1783539641962806211",
+              "durationNanos": "8946773",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "voiceqas"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "voiceqas": {
+          "spanCount": 1
+        }
+      }
+    }
+  ]
+}

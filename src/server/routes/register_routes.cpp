@@ -8,6 +8,8 @@ void register_all_routes(httplib::Server& server, const RouteContext& ctx) {
     register_media_routes(server, ctx);
     register_ops_routes(server, ctx);
     register_stt_routes(server, ctx);
+    register_analysis_routes(server, ctx);
+    register_config_routes(server, ctx);
 }
 
 }  // namespace voiceqas::routes

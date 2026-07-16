@@ -109,9 +109,71 @@ void ExternalAiService::on_stt_final(
         }
 
         PipelineTracker::instance().record_external_ai_outbound(session_id, response_bytes, latency_ms);
-        PipelineTracker::instance().record_transport_egress(session_id, transport_node::kRest, response_bytes, latency_ms);
+        PipelineTracker::instance().record_transport_egress(
+            session_id, transport_node::kRest, response_bytes, latency_ms);
         publish_pipeline_snapshot(session_id);
     }).detach();
+}
+
+std::string ExternalAiService::chat(
+    const std::string& system_prompt,
+    const std::string& user_prompt,
+    std::string* error_out) {
+    const auto& cfg = external_ai_config();
+    if (cfg.base_url.empty()) {
+        if (error_out) {
+            *error_out = "external_ai.base_url empty";
+        }
+        return {};
+    }
+
+    const auto parsed = parse_base_url(cfg.base_url);
+    httplib::Client cli(parsed.host, parsed.port);
+    cli.set_connection_timeout(cfg.timeout_ms / 1000, (cfg.timeout_ms % 1000) * 1000);
+    cli.set_read_timeout(cfg.timeout_ms / 1000, (cfg.timeout_ms % 1000) * 1000);
+
+    nlohmann::json messages = nlohmann::json::array();
+    if (!system_prompt.empty()) {
+        messages.push_back({{"role", "system"}, {"content", system_prompt}});
+    }
+    messages.push_back({{"role", "user"}, {"content", user_prompt}});
+
+    nlohmann::json body = {
+        {"model", cfg.model},
+        {"stream", false},
+        {"messages", messages},
+        // Low temperature keeps local models closer to the Lab section template.
+        {"options", {{"temperature", 0.2}, {"top_p", 0.9}}},
+    };
+
+    auto res = cli.Post("/api/chat", body.dump(), "application/json");
+    if (!res) {
+        if (error_out) {
+            *error_out = "failed to reach Ollama at " + cfg.base_url;
+        }
+        return {};
+    }
+    if (res->status < 200 || res->status >= 300) {
+        if (error_out) {
+            *error_out = "Ollama HTTP " + std::to_string(res->status) + ": " + res->body;
+        }
+        return {};
+    }
+    try {
+        const auto json = nlohmann::json::parse(res->body);
+        if (json.contains("message") && json["message"].is_object() &&
+            json["message"].contains("content")) {
+            return json["message"]["content"].get<std::string>();
+        }
+        if (error_out) {
+            *error_out = "unexpected Ollama response shape";
+        }
+    } catch (const std::exception& e) {
+        if (error_out) {
+            *error_out = e.what();
+        }
+    }
+    return {};
 }
 
 }  // namespace voiceqas::ops

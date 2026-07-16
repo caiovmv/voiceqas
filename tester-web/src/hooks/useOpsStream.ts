@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectOpsStream } from '../lib/api';
 import type { OpsEvent, WindowMetrics } from '../lib/types';
 
+export const OPS_WS_RECONNECT_MS = 10_000;
+
 interface UseOpsStreamOptions {
   filterSessionId?: string;
   onVqaWindow: (sessionId: string, metrics: WindowMetrics) => void;
@@ -11,6 +13,7 @@ interface UseOpsStreamOptions {
   onStatus: (msg: string) => void;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  reconnectToken?: number;
 }
 
 export function useOpsStream({
@@ -22,11 +25,14 @@ export function useOpsStream({
   onStatus,
   autoConnect = false,
   autoReconnect = true,
+  reconnectToken = 0,
 }: UseOpsStreamOptions) {
   const [connected, setConnected] = useState(false);
   const handleRef = useRef<ReturnType<typeof connectOpsStream> | null>(null);
   const reconnectTimer = useRef<number | null>(null);
   const manualDisconnect = useRef(false);
+  const filterRef = useRef(filterSessionId);
+  filterRef.current = filterSessionId;
   const callbacksRef = useRef({ onVqaWindow, onSttEvent, onAlert, onPipelineSnapshot, onStatus });
   callbacksRef.current = { onVqaWindow, onSttEvent, onAlert, onPipelineSnapshot, onStatus };
 
@@ -50,7 +56,7 @@ export function useOpsStream({
     manualDisconnect.current = false;
     closeSocket();
     handleRef.current = connectOpsStream({
-      filterSessionId,
+      filterSessionId: filterRef.current,
       onEvent: (ev: OpsEvent) => {
         if (ev.type === 'vqa_window') {
           callbacksRef.current.onVqaWindow(ev.session_id, ev);
@@ -69,18 +75,23 @@ export function useOpsStream({
         }
         if (autoReconnect && !manualDisconnect.current && msg === 'Ops WebSocket fechado') {
           setConnected(false);
-          reconnectTimer.current = window.setTimeout(() => connect(), 3000);
+          callbacksRef.current.onStatus(`Reconectando em ${OPS_WS_RECONNECT_MS / 1000}s…`);
+          reconnectTimer.current = window.setTimeout(() => connect(), OPS_WS_RECONNECT_MS);
         }
       },
     });
-  }, [autoReconnect, closeSocket, filterSessionId]);
+  }, [autoReconnect, closeSocket]);
 
   useEffect(() => {
-    if (autoConnect) {
-      connect();
+    if (!autoConnect) {
+      return undefined;
     }
-    return () => disconnect();
-  }, [autoConnect, connect, disconnect]);
+    const debounce = window.setTimeout(() => connect(), 300);
+    return () => {
+      window.clearTimeout(debounce);
+      disconnect();
+    };
+  }, [autoConnect, connect, disconnect, filterSessionId, reconnectToken]);
 
   return { connect, disconnect, connected };
 }

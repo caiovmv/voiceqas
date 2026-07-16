@@ -57,17 +57,23 @@ struct MediaRelayServer::Impl {
 MediaRelayServer::MediaRelayServer(
     std::string bind_addr,
     audio::MediaRelayConfig relay_config,
+    audio::AudioProcessingConfig audio_config,
     std::shared_ptr<media::MediaSessionManager> media_sessions,
     std::shared_ptr<VqaSessionManager> vqa_sessions,
     std::shared_ptr<stt::SttSessionManager> stt_sessions,
-    std::shared_ptr<ports::IPipelineTelemetry> telemetry)
+    std::shared_ptr<ports::IPipelineTelemetry> telemetry,
+    std::shared_ptr<config::ChannelRegistry> channel_registry)
     : impl_(std::make_unique<Impl>()),
       bind_addr_(std::move(bind_addr)),
       relay_config_(std::move(relay_config)),
       media_sessions_(std::move(media_sessions)),
       vqa_sessions_(std::move(vqa_sessions)),
       stt_sessions_(std::move(stt_sessions)),
-      telemetry_(std::move(telemetry)) {}
+      telemetry_(std::move(telemetry)),
+      channel_registry_(std::move(channel_registry)),
+      ingress_processor_(std::move(audio_config)) {
+    ingress_processor_.set_channel_registry(channel_registry_);
+}
 
 MediaRelayServer::~MediaRelayServer() {
     stop();
@@ -191,6 +197,10 @@ void MediaRelayServer::run() {
 
                     telemetry_->record_rtp_ingress(session_id, bytes, 0.0, 0.0);
 
+                    if (auto session_cfg = media_sessions_->get_session_config(session_id)) {
+                        ingress_processor_.set_session_channel(session_id, session_cfg->channel_id);
+                    }
+
                     const auto decoded = ingress_processor_.decode(session_id, format, payload);
                     if (decoded && vqa_sessions_) {
                         telemetry_->record_vqa_path(
@@ -198,11 +208,17 @@ void MediaRelayServer::run() {
                             bytes,
                             decoded->pcm.size() * sizeof(int16_t),
                             0.0,
-                            0.0,
+                            decoded->agc_ms,
+                            decoded->enhancement_ms,
                             decoded->stats.jitter_ms,
                             decoded->stats.packet_loss_pct);
+                        // PCM already AGC+RNNoise'd in shared ingress — do not reprocess.
                         if (auto report = vqa_sessions_->push_pcm(
-                                session_id, decoded->pcm, ts, decoded->sample_rate)) {
+                                session_id,
+                                decoded->pcm,
+                                ts,
+                                decoded->sample_rate,
+                                /*apply_agc=*/false)) {
                             telemetry_->record_rtp_ingress(
                                 session_id, 0, report->jitter_ms, report->packet_loss_pct, false);
                             if (stt_sessions_) {
@@ -212,7 +228,12 @@ void MediaRelayServer::run() {
                     }
                     if (decoded && stt_sessions_) {
                         stt_sessions_->ensure_session_bound(session_id);
-                        stt_sessions_->append_pcm(session_id, decoded->pcm, decoded->sample_rate);
+                        stt_sessions_->append_pcm(
+                            session_id,
+                            decoded->pcm,
+                            decoded->sample_rate,
+                            decoded->agc_ms,
+                            decoded->enhancement_ms);
                         if (auto partial = stt_sessions_->emit_partial_if_due(session_id)) {
                             (void)partial;
                         }

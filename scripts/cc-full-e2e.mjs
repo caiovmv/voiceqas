@@ -352,11 +352,22 @@ async function runObservabilityChecks() {
 
   // 2 REST RED
   try {
-    const rps = await promValue(
+    const beylaUp = await promValue('up{job="beyla"}');
+    const rpsBeyla = await promValue(
       'sum(rate(http_server_request_duration_seconds_count{service_name="voiceqas",server_port="8080",http_route!~"/health|/ready|/metrics"}[15m]))',
     );
-    if (rps != null && rps > 0) pass('OBS RED REST', `rps=${rps.toFixed(3)}`);
-    else fail('OBS RED REST', `rps=${rps}`);
+    const rpsOtel = await promValue(
+      'sum(rate(traces_spanmetrics_calls_total{service_name="voiceqas",span_name!~".*/(health|ready|metrics)|GET /health|GET /metrics|GET /ready",span_name=~"^(GET|POST|PUT|DELETE|PATCH) /v1/.*"}[15m]))',
+    );
+    if (rpsBeyla != null && rpsBeyla > 0) {
+      pass('OBS RED REST', `rps=${rpsBeyla.toFixed(3)} (Beyla)`);
+    } else if (rpsOtel != null && rpsOtel > 0) {
+      pass('OBS RED REST', `OTel rps=${rpsOtel.toFixed(3)}; Beyla=${rpsBeyla ?? 0}`);
+    } else if ((beylaUp ?? 0) < 1) {
+      fail('OBS RED REST', 'Beyla down — scripts/redeploy-voiceqas.ps1');
+    } else {
+      fail('OBS RED REST', `rps_beyla=${rpsBeyla} otel=${rpsOtel}`);
+    }
   } catch (e) {
     fail('OBS RED REST', e.message);
   }

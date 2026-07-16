@@ -42,6 +42,7 @@ export async function checkSttReady() {
 export async function transcribeRestBatch(
   encoded: EncodedPayload,
   config: CodecConfig,
+  extraHeaders: Record<string, string> = {},
 ): Promise<SttResult> {
   const allBytes = concatFrames(encoded.frames);
   const res = await fetch(`${apiBase}/v1/stt/transcribe`, {
@@ -54,6 +55,7 @@ export async function transcribeRestBatch(
       'X-STT-Model': config.sttModel,
       'X-STT-Provider': config.sttProvider,
       'X-Session-Id': `${config.sessionId}-stt`,
+      ...extraHeaders,
     },
     body: allBytes,
   });

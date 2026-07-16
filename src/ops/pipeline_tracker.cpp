@@ -252,6 +252,7 @@ void PipelineTracker::record_vqa_path(
     uint64_t pcm_bytes,
     double decode_ms,
     double agc_ms,
+    double enhancement_ms,
     double jitter_ms,
     double packet_loss_pct) {
     std::lock_guard lock(mutex_);
@@ -261,7 +262,7 @@ void PipelineTracker::record_vqa_path(
     auto& enh = stage(session, pipeline_stage::kEnhancement, kPipelineDirectionInbound);
     touch_stage_metrics(decode.metrics, payload_bytes, pcm_bytes, decode_ms);
     touch_stage_metrics(agc.metrics, pcm_bytes, pcm_bytes, agc_ms);
-    touch_stage_metrics(enh.metrics, pcm_bytes, pcm_bytes, 0.0);
+    touch_stage_metrics(enh.metrics, pcm_bytes, pcm_bytes, enhancement_ms);
     enh.metrics.enabled = true;
     decode.metrics.jitter_ms = jitter_ms;
     decode.metrics.packet_loss_pct = packet_loss_pct;
@@ -305,6 +306,9 @@ void PipelineTracker::record_stt_prepare(const std::string& session_id, const St
     touch_stage_metrics(gate.metrics, timings.payload_bytes, timings.payload_bytes, 0.0);
     touch_stage_metrics(decode.metrics, timings.payload_bytes, timings.pcm_bytes, timings.decode_ms);
     touch_stage_metrics(agc.metrics, timings.pcm_bytes, timings.pcm_bytes, timings.agc_ms);
+    auto& enh = stage(session, pipeline_stage::kEnhancement, kPipelineDirectionInbound);
+    touch_stage_metrics(enh.metrics, timings.pcm_bytes, timings.pcm_bytes, timings.enhancement_ms);
+    enh.metrics.enabled = true;
     touch_stage_metrics(resample.metrics, timings.pcm_bytes, timings.pcm_bytes, timings.resample_ms);
 }
 

@@ -115,7 +115,7 @@ Motor in-process via **sherpa-onnx** (sem sidecar Python em produção):
 
 Parâmetro `model`: `parakeet` | `whisper` | `auto`.
 
-Áudio STT: decode → AGC (se habilitado) → resample 16 kHz → recognizer.
+Áudio STT: decode → channel strip (NR→HPF→EQ→DeEss→Comp→Lim→AGC) → resample 16 kHz → recognizer.
 
 #### REST STT
 

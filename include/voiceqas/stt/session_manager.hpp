@@ -44,7 +44,9 @@ public:
     void append_pcm(
         const std::string& session_id,
         std::span<const int16_t> pcm,
-        int sample_rate);
+        int sample_rate,
+        double shared_agc_ms = 0.0,
+        double shared_enhancement_ms = 0.0);
 
     void ensure_session_bound(const std::string& session_id);
     void emit_partials_for_all_sessions();

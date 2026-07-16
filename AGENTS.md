@@ -71,7 +71,7 @@ Serviço C++ de **VQA** e **STT** para tronco SIP. Branch media pipeline: `featu
 
 - STT parcial incremental + Silero VAD (k2fsa default; selector `auto|k2fsa|v4|v5|k2fsa-int8`)
 
-- Gate opcional `stt.require_stt_ready` — bloqueia STT streaming quando VQA diz não-ready
+- Gate `stt.require_stt_ready` (default **on**) — bloqueia STT streaming quando VQA diz não-ready; desligar com `VOICEQAS_STT_REQUIRE_STT_READY=0`
 
 
 
@@ -96,7 +96,10 @@ Dados persistentes no host em `data/observability/` (métricas, logs, traces, Gr
 
 - **Ports/adapters:** `include/voiceqas/ports/` — `IMetricsPublisher`, `IPipelineTelemetry`; adapters em `src/ops/adapters/`
 - **VQA sessions:** `VqaSessionManager` (antes `SessionManager`) em `analyzer.hpp`
-- **RTP ingress unificado:** `media::RtpIngressProcessor` no media relay (decode único → fan-out PCM)
+- **RTP ingress unificado:** `media::RtpIngressProcessor` no media relay (decode → channel strip NR→HPF→EQ→DeEss→Comp→Lim→AGC → fan-out PCM)
+- **Enhancement:** `audio::RnnoiseEnhancer` (`audio.enhancement`); telemetria `enhancement` com latência real
+- **Diarização:** Silero turnos + `stt.diarization.focus_primary` antes do ASR
+- **VQA gate:** `speech_quality_score` sem silêncio; presença via `max_silence_ratio_for_ready`
 - **Codec registry:** `audio::CodecRegistry` / `default_codec_registry()`
 - **REST modular:** `src/server/routes/` — `static_routes`, `vqa_routes`, `media_routes`, `ops_routes`, `stt_routes` + `RouteContext`
 - **gRPC mappers:** `include/voiceqas/server/grpc_mappers.hpp` — proto ↔ `AudioFormat`, quality/STT payloads
@@ -111,29 +114,35 @@ Dados persistentes no host em `data/observability/` (métricas, logs, traces, Gr
 
 ## Pendente
 
-- Enhancement neural (RNNoise)
-
 - Stack SIP signaling
 
 - TSDB enterprise / OAuth SSO
 
 - Recognizer sherpa streaming dedicado (online)
 
+- Diarização com embeddings / overlap
+
+- PESQ/STOI/SRMR e WER treinado
+
 
 
 ## Build
 
-
+Two Dockerfiles:
+- `Dockerfile.base` -> `voiceqas-build-base:local` (toolchain + vcpkg deps, bake once)
+- `Dockerfile` -> app image (FROM base; compiles only your code)
 
 ```bash
-
 ./scripts/download-stt-models.sh   # volume Docker ou path local
-
 docker compose up --build
 
+# Analysis Lab mix calibration / quality (Whisper CUDA, fixture WAVs)
+python scripts/calibrate-analysis-mix.py --model whisper --provider cuda
+python scripts/calibrate-analysis-mix.py --apply-check
+python scripts/e2e-analysis-mix-quality.py --llm-smoke
 ```
 
 
 
-Docs: `docs/spec/command-center-ui.md`, `docs/spec/audio-pipeline.md`
+Docs: `docs/spec/command-center-ui.md`, `docs/spec/audio-pipeline.md`, `docs/spec/dsp-stt-intelligibility-matrix.md`
 

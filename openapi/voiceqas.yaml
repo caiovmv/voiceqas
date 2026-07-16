@@ -334,6 +334,47 @@ paths:
                 $ref: '#/components/schemas/AgentAudioResponse'
         '400':
           description: Erro
+  /v1/tools/process-audio:
+    post:
+      summary: Decode + channel strip → WAV (Analysis Lab listen/download)
+      description: |
+        Applies VoiceChannelStrip (NR→HPF→EQ→DeEss→Comp→Lim→AGC) using request
+        audio headers / X-Audio-Strip. Returns full-timeline WAV (no Silero mask).
+      parameters:
+        - in: header
+          name: X-Audio-Format
+          schema: { type: string }
+        - in: header
+          name: X-Sample-Rate
+          schema: { type: integer }
+        - in: header
+          name: X-Audio-Strip
+          schema: { type: string }
+          description: JSON ChannelStripConfig
+        - in: header
+          name: X-Audio-AGC
+          schema: { type: string }
+        - in: header
+          name: X-Audio-Enhancement
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+          audio/wav:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: Processed mono PCM16 WAV
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+          headers:
+            X-Sample-Rate:
+              schema: { type: integer }
+        '400':
+          description: Decode/process error
   /v1/tools/pack-rtp:
     post:
       tags: [tools]
@@ -444,6 +485,32 @@ paths:
           description: Snapshot com nodes, links e echarts option
         '401':
           description: Não autorizado
+
+  /v1/config/pipeline-default:
+    get:
+      tags: [config]
+      summary: Pipeline audio/STT default (global)
+    put:
+      tags: [config]
+      summary: Atualiza pipeline default (persiste channels.yaml overlay)
+  /v1/config/channels:
+    get:
+      tags: [config]
+      summary: Lista perfis de canal
+    post:
+      tags: [config]
+      summary: Cria canal
+  /v1/config/channels/{id}:
+    get:
+      tags: [config]
+      summary: Perfil de canal com pipeline efetivo
+    put:
+      tags: [config]
+      summary: Atualiza canal
+    delete:
+      tags: [config]
+      summary: Remove canal (bloqueia default)
+
   /v1/ops/pipeline/sessions:
     get:
       tags: [ops]

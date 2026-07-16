@@ -25,6 +25,7 @@ public:
         double,
         double,
         double,
+        double,
         double) override {}
     void record_vqa_window(const std::string&, const WindowMetrics&) override {}
     void record_stt_gate_drop(const std::string&, uint64_t) override {}

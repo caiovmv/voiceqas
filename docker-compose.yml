@@ -8,6 +8,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
+        # Prerequisite: ./scripts/build-base.ps1  (or docker build -f Dockerfile.base ...)
+        BASE_IMAGE: voiceqas-build-base:local
         GCC_VERSION: "15"
         CMAKE_MIN_VERSION: "3.31"
         CPP_STD: "c++26"
@@ -20,6 +22,9 @@ services:
         VOICEQAS_STT_CUDA: "1"
     image: voiceqas:local
     container_name: voiceqas
+    # Ao recriar este servico, recrie tambem beyla (PID namespace compartilhado):
+    #   docker compose up -d --force-recreate voiceqas command-center beyla
+    #   ou: ./scripts/redeploy-voiceqas.ps1
     gpus: all
     networks: [voiceqas]
     extra_hosts:
@@ -39,20 +44,26 @@ services:
       VOICEQAS_STT_THREADS: "2"
       VOICEQAS_STT_PROVIDER: "cpu"
       VOICEQAS_STT_VAD_MODEL: "auto"
+      VOICEQAS_STT_REQUIRE_STT_READY: "true"
+      VOICEQAS_AUDIO_ENHANCEMENT: "false"
+      # Lab envia X-STT-Focus-Primary por request; default OFF evita stub STT no media path.
+      VOICEQAS_DIARIZATION_FOCUS_PRIMARY: "false"
       VOICEQAS_MEDIA_RTP_ADDR: "0.0.0.0:10000"
       VOICEQAS_MEDIA_PREFERRED_INGRESS_CODEC: "rtp_g722"
       VOICEQAS_OPS_READ_TOKEN: "dev-read"
       VOICEQAS_OPS_WRITE_TOKEN: "dev-write"
       VOICEQAS_OPS_TOKEN: "dev-admin"
       VOICEQAS_OPS_STORAGE_PATH: "/data/ops/voiceqas-ops.jsonl"
+      VOICEQAS_CHANNELS_CONFIG_PATH: "/data/config/channels.yaml"
       VOICEQAS_TRACING_ENABLED: "true"
       VOICEQAS_OTLP_ENDPOINT: "http://alloy:4317"
       VOICEQAS_EXTERNAL_AI_ENABLED: "false"
       VOICEQAS_EXTERNAL_AI_BASE_URL: "http://host.docker.internal:11434"
-      VOICEQAS_EXTERNAL_AI_MODEL: "cryptidbleh/gemma4-claude-sonnet-4.6"
+      VOICEQAS_EXTERNAL_AI_MODEL: "gemma4:e4b"
     volumes:
       - stt-models:/models/stt:ro
       - ./data/observability/ops:/data/ops
+      - ./data/config:/data/config
     restart: unless-stopped
     read_only: true
     security_opt:
@@ -61,7 +72,7 @@ services:
       resources:
         limits:
           cpus: "4"
-          memory: 6G
+          memory: 16G
 
   command-center:
     build:
@@ -108,6 +119,12 @@ services:
       alloy:
         condition: service_started
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8999/metrics >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:

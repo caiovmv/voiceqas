@@ -206,6 +206,8 @@ export function TesterApp() {
         <h1>voiceqas tester</h1>
         <p>
           Grave áudio no navegador, simule codecs SIP e teste STT via REST / WebSocket / gRPC —{' '}
+          <a href="#analysis">Análise (mesa de calibração)</a>
+          {' · '}
           <a href="/docs/swagger" target="_blank" rel="noreferrer">
             Swagger
           </a>

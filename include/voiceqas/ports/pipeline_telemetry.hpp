@@ -11,6 +11,7 @@ namespace voiceqas::ports {
 struct SttPrepareTimings {
     double decode_ms = 0.0;
     double agc_ms = 0.0;
+    double enhancement_ms = 0.0;
     double resample_ms = 0.0;
     size_t pcm_bytes = 0;
     size_t payload_bytes = 0;
@@ -41,6 +42,7 @@ public:
         uint64_t pcm_bytes,
         double decode_ms,
         double agc_ms,
+        double enhancement_ms,
         double jitter_ms,
         double packet_loss_pct) = 0;
     virtual void record_vqa_window(const std::string& session_id, const WindowMetrics& metrics) = 0;

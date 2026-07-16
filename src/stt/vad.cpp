@@ -1,6 +1,7 @@
 #include "voiceqas/stt/vad.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -37,26 +38,43 @@ SileroVad::~SileroVad() {
     }
 }
 
+namespace {
+
+std::vector<float> to_float_16k(std::span<const int16_t> pcm, int sample_rate) {
+    if (sample_rate != 16000) {
+        const auto resampled = audio::resample_sinc_pcm16(pcm, sample_rate, 16000);
+        std::vector<float> samples(resampled.size());
+        for (size_t i = 0; i < resampled.size(); ++i) {
+            samples[i] = static_cast<float>(resampled[i]) / 32768.0f;
+        }
+        return samples;
+    }
+    std::vector<float> samples(pcm.size());
+    for (size_t i = 0; i < pcm.size(); ++i) {
+        samples[i] = static_cast<float>(pcm[i]) / 32768.0f;
+    }
+    return samples;
+}
+
+std::vector<int16_t> float_to_pcm16(const float* data, int32_t n) {
+    std::vector<int16_t> out(static_cast<size_t>(n));
+    for (int32_t i = 0; i < n; ++i) {
+        const auto v = static_cast<int32_t>(data[i] * 32767.0f);
+        out[static_cast<size_t>(i)] = static_cast<int16_t>(std::clamp(v, -32768, 32767));
+    }
+    return out;
+}
+
+}  // namespace
+
 std::vector<int16_t> SileroVad::extract_speech(std::span<const int16_t> pcm, int sample_rate) const {
     if (!detector_ || pcm.empty()) {
         return {pcm.begin(), pcm.end()};
     }
 
-    std::vector<float> samples(pcm.size());
-    for (size_t i = 0; i < pcm.size(); ++i) {
-        samples[i] = static_cast<float>(pcm[i]) / 32768.0f;
-    }
+    std::lock_guard lock(mutex_);
+    auto samples = to_float_16k(pcm, sample_rate);
 
-    if (sample_rate != 16000) {
-        const auto resampled = audio::resample_sinc_pcm16(pcm, sample_rate, 16000);
-        samples.resize(resampled.size());
-        for (size_t i = 0; i < resampled.size(); ++i) {
-            samples[i] = static_cast<float>(resampled[i]) / 32768.0f;
-        }
-        sample_rate = 16000;
-    }
-
-    (void)sample_rate;
     SherpaOnnxVoiceActivityDetectorReset(detector_);
     SherpaOnnxVoiceActivityDetectorAcceptWaveform(
         detector_, samples.data(), static_cast<int32_t>(samples.size()));
@@ -66,13 +84,8 @@ std::vector<int16_t> SileroVad::extract_speech(std::span<const int16_t> pcm, int
     while (!SherpaOnnxVoiceActivityDetectorEmpty(detector_)) {
         const auto* segment = SherpaOnnxVoiceActivityDetectorFront(detector_);
         if (segment && segment->samples && segment->n > 0) {
-            const auto prev = speech.size();
-            speech.resize(prev + static_cast<size_t>(segment->n));
-            for (int32_t i = 0; i < segment->n; ++i) {
-                const auto v = static_cast<int32_t>(segment->samples[i] * 32767.0f);
-                speech[prev + static_cast<size_t>(i)] = static_cast<int16_t>(
-                    std::clamp(v, -32768, 32767));
-            }
+            auto chunk = float_to_pcm16(segment->samples, segment->n);
+            speech.insert(speech.end(), chunk.begin(), chunk.end());
         }
         SherpaOnnxVoiceActivityDetectorPop(detector_);
         if (segment) {
@@ -80,10 +93,67 @@ std::vector<int16_t> SileroVad::extract_speech(std::span<const int16_t> pcm, int
         }
     }
 
-    if (speech.empty()) {
-        return {};
-    }
     return speech;
+}
+
+std::vector<SpeechTurn> SileroVad::detect_turns(std::span<const int16_t> pcm, int sample_rate) const {
+    std::vector<SpeechTurn> turns;
+    if (!detector_ || pcm.empty()) {
+        return turns;
+    }
+
+    std::lock_guard lock(mutex_);
+    auto samples = to_float_16k(pcm, sample_rate);
+
+    SherpaOnnxVoiceActivityDetectorReset(detector_);
+    SherpaOnnxVoiceActivityDetectorAcceptWaveform(
+        detector_, samples.data(), static_cast<int32_t>(samples.size()));
+    SherpaOnnxVoiceActivityDetectorFlush(detector_);
+
+    while (!SherpaOnnxVoiceActivityDetectorEmpty(detector_)) {
+        const auto* segment = SherpaOnnxVoiceActivityDetectorFront(detector_);
+        if (segment && segment->samples && segment->n > 0) {
+            SpeechTurn turn;
+            turn.start_ms = static_cast<int64_t>(segment->start) * 1000 / 16000;
+            turn.end_ms = turn.start_ms + static_cast<int64_t>(segment->n) * 1000 / 16000;
+            turns.push_back(turn);
+        }
+        SherpaOnnxVoiceActivityDetectorPop(detector_);
+        if (segment) {
+            SherpaOnnxDestroySpeechSegment(segment);
+        }
+    }
+    return turns;
+}
+
+DiarizationResult SileroVad::diarize(
+    std::span<const int16_t> pcm,
+    int sample_rate,
+    const DiarizationConfig& config) const {
+    DiarizationResult result;
+    if (!ready() || pcm.empty()) {
+        return result;
+    }
+
+    std::vector<int16_t> pcm16;
+    std::span<const int16_t> view = pcm;
+    if (sample_rate != 16000) {
+        pcm16 = audio::resample_sinc_pcm16(pcm, sample_rate, 16000);
+        view = pcm16;
+    }
+
+    const auto raw = detect_turns(view, 16000);
+    // Always assign speaker_id / is_primary (mono turn-taking). Previously the
+    // !focus_primary path returned raw turns all as speaker 0 — Lab then showed
+    // a single interlocutor.
+    result = pick_primary_turns(raw, view, config);
+    if (!config.focus_primary) {
+        // Engine does per-turn ASR on full timeline; keep labeled turns and a
+        // speech extract for callers that still want primary_pcm as "all speech".
+        result.primary_pcm = extract_speech(view, 16000);
+        result.ok = !result.turns.empty() || !result.primary_pcm.empty();
+    }
+    return result;
 }
 
 }  // namespace voiceqas::stt

@@ -34,6 +34,7 @@ export interface WindowMetrics {
   spectral_flatness: number;
   packet_loss_pct: number;
   jitter_ms: number;
+  speech_quality_score?: number;
   composite_score: number;
   stt_ready: boolean;
   session_id?: string;
@@ -61,6 +62,7 @@ export interface MediaSessionMeta {
   session_id: string;
   format: string | number;
   sample_rate: number;
+  channel_id?: string;
   remote_host?: string;
   remote_port?: number;
   inbound_host?: string;
@@ -202,14 +204,42 @@ export interface MediaSessionResponse {
 export interface BatchResult {
   composite_score: number;
   stt_ready: boolean;
+  aggregated?: WindowMetrics;
+  /** Weighted mean of speech windows only (weight = 1 - silence_ratio). */
+  speech_aggregated?: WindowMetrics;
+  speech_window_count?: number;
+  /** Individual speech windows (silence_ratio <= max_silence_ratio). */
+  speech_windows?: WindowMetrics[];
   windows: WindowMetrics[];
   stt_ready_segments: Array<{ start_ms: number; end_ms: number }>;
+  ready_window_count?: number;
+  ready_ratio?: number;
+  snr_std?: number;
+  stt_risk?: number;
 }
 
 export interface SttSegment {
   start_ms: number;
   end_ms: number;
   text: string;
+  speaker_id?: number;
+}
+
+export interface DiarizationTurn {
+  start_ms: number;
+  end_ms: number;
+  rms_dbfs?: number;
+  speaker_id: number;
+  is_primary?: boolean;
+  text?: string;
+}
+
+export interface DiarizationSpeaker {
+  speaker_id: number;
+  is_primary: boolean;
+  duration_ms: number;
+  turn_count: number;
+  role: 'primary' | 'secondary' | string;
 }
 
 export interface SttResult {
@@ -221,6 +251,12 @@ export interface SttResult {
   segments: SttSegment[];
   ok: boolean;
   error?: string;
+  diarization?: {
+    turns: DiarizationTurn[];
+    primary_speaker: number;
+    speaker_count?: number;
+    speakers?: DiarizationSpeaker[];
+  };
 }
 
 export const FORMAT_ENUM: Record<AudioFormat, number> = {

@@ -20,6 +20,7 @@ struct ServerConfig {
     std::string web_root = "web";
     std::string openapi_path = "openapi/voiceqas.yaml";
     std::string config_path;
+    std::string channels_config_path = "/data/config/channels.yaml";
 };
 
 struct AppConfig {

@@ -15,6 +15,7 @@ struct PreparedAudio {
     int sample_rate = 16000;
     double decode_ms = 0.0;
     double agc_ms = 0.0;
+    double enhancement_ms = 0.0;
     double resample_ms = 0.0;
     size_t payload_bytes = 0;
 };

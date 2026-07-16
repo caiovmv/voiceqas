@@ -12,6 +12,10 @@
     "yaml-cpp",
     "bcg729",
     {
+      "name": "rnnoise",
+      "platform": "!windows & !arm"
+    },
+    {
       "name": "opentelemetry-cpp",
       "features": ["otlp-grpc"]
     }

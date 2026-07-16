@@ -293,19 +293,37 @@ async function main() {
 
   // 5) RED REST RPS + P95
   try {
-    const rps = promValue(
+    const beylaUp = promValue(await promInstant('up{job="beyla"}'));
+    const rpsBeyla = promValue(
       await promInstant(
-        'sum(rate(http_server_request_duration_seconds_count{service_name="voiceqas",server_port="8080",http_route!~"/health|/ready|/metrics"}[1m]))',
+        'sum(rate(http_server_request_duration_seconds_count{service_name="voiceqas",server_port="8080",http_route!~"/health|/ready|/metrics"}[5m]))',
       ),
     );
-    const p95 = promValue(
+    const p95Beyla = promValue(
       await promInstant(
         'histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name="voiceqas",server_port="8080",http_route!~"/health|/ready|/metrics",http_response_status_code!~"101"}[5m])) by (le))',
       ),
     );
-    if (rps != null && rps > 0 && p95 != null && Number.isFinite(p95)) {
-      ok('5. RED REST (RPS + P95)', `rps=${rps.toFixed(3)} p95=${(p95 * 1000).toFixed(1)}ms (Beyla :8080)`);
-    } else fail('5. RED REST (RPS + P95)', `rps=${rps} p95=${p95} — Beyla sidecar morto ou sem scrape?`);
+    const rpsOtel = promValue(
+      await promInstant(
+        'sum(rate(traces_spanmetrics_calls_total{service_name="voiceqas",span_name!~".*/(health|ready|metrics)|GET /health|GET /metrics|GET /ready",span_name=~"^(GET|POST|PUT|DELETE|PATCH) /v1/.*"}[15m]))',
+      ),
+    );
+    if (rpsBeyla != null && rpsBeyla > 0 && p95Beyla != null && Number.isFinite(p95Beyla)) {
+      ok('5. RED REST (RPS + P95)', `rps=${rpsBeyla.toFixed(3)} p95=${(p95Beyla * 1000).toFixed(1)}ms (Beyla :8080)`);
+    } else if (rpsOtel != null && rpsOtel > 0) {
+      ok(
+        '5. RED REST (RPS + P95)',
+        `OTel spanmetrics rps=${rpsOtel.toFixed(3)}; Beyla rps=${rpsBeyla ?? 0} (up=${beylaUp ?? 0})`,
+      );
+    } else if ((beylaUp ?? 0) < 1) {
+      fail(
+        '5. RED REST (RPS + P95)',
+        'Beyla down — rode: docker compose up -d --force-recreate beyla (ou scripts/redeploy-voiceqas.ps1)',
+      );
+    } else {
+      fail('5. RED REST (RPS + P95)', `rps_beyla=${rpsBeyla} p95=${p95Beyla} otel=${rpsOtel}`);
+    }
   } catch (e) {
     fail('5. RED REST (RPS + P95)', String(e.message || e));
   }

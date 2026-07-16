@@ -52,6 +52,7 @@ export function RecorderPanel({
             type="file"
             accept="audio/*"
             hidden
+            data-testid="analysis-load-wav"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) onFile(f);
@@ -78,7 +79,7 @@ export function RecorderPanel({
         <Waveform pcm={pcm ?? null} liveSamples={isRecording ? liveWave : null} />
       )}
       {hasAudio && (
-        <p className="ok">
+        <p className="ok" data-testid="analysis-audio-ready">
           Áudio pronto: {sampleCount} amostras (origem ~{sourceRate} Hz)
         </p>
       )}

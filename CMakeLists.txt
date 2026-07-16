@@ -7,11 +7,26 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # C++26 só nos targets voiceqas — não propagar para sherpa-onnx/openfst (incompatível).
 function(voiceqas_apply_cxx_std target)
     target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-std=c++26>)
+    if(VOICEQAS_PERF_BADASS)
+        target_compile_options(${target} PRIVATE
+            $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<CONFIG:Debug>>>:-march=x86-64-v3>
+        )
+        set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
+endfunction()
+
+function(voiceqas_apply_badass_c target)
+    if(VOICEQAS_PERF_BADASS)
+        target_compile_options(${target} PRIVATE $<$<NOT:$<CONFIG:Debug>>:-march=x86-64-v3>)
+        set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
 endfunction()
 
 option(VOICEQAS_BUILD_TESTS "Build unit tests" ON)
+option(VOICEQAS_PERF_BADASS "Release tuning: LTO + x86-64-v3 on voiceqas targets" OFF)
 option(VOICEQAS_ENABLE_STT "Embed sherpa-onnx STT engine" ON)
 option(VOICEQAS_STT_CUDA "Build sherpa-onnx with CUDA ONNX Runtime provider" OFF)
+option(VOICEQAS_ENABLE_RNNOISE "Link RNNoise for audio enhancement (Linux/x64 via vcpkg)" ON)
 option(VOICEQAS_COVERAGE "Enable gcov coverage instrumentation" OFF)
 
 function(voiceqas_enable_coverage target)
@@ -119,6 +134,16 @@ target_link_libraries(voiceqas_tracing PUBLIC
 )
 
 add_subdirectory(third_party/spandsp)
+voiceqas_apply_badass_c(spandsp_g722)
+
+if(VOICEQAS_PERF_BADASS)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT _voiceqas_ipo_ok OUTPUT _voiceqas_ipo_err)
+    if(NOT _voiceqas_ipo_ok)
+        message(FATAL_ERROR "VOICEQAS_PERF_BADASS requires LTO: ${_voiceqas_ipo_err}")
+    endif()
+    message(STATUS "VOICEQAS_PERF_BADASS: LTO + -march=x86-64-v3 on voiceqas targets (Release)")
+endif()
 
 add_library(voiceqas_core STATIC
     src/core/metrics.cpp
@@ -129,6 +154,9 @@ add_library(voiceqas_core STATIC
     src/core/wav.cpp
     src/ports/noop_ports.cpp
     src/audio/normalizer.cpp
+    src/audio/rnnoise_enhancer.cpp
+    src/audio/dsp/biquad.cpp
+    src/audio/dsp/channel_strip.cpp
     src/audio/decoder.cpp
     src/audio/encoder.cpp
     src/audio/resampler.cpp
@@ -141,6 +169,7 @@ add_library(voiceqas_core STATIC
     src/rtp/packetizer.cpp
     src/media/session_manager.cpp
     src/media/rtp_ingress.cpp
+    src/config/channel_registry.cpp
     src/stt/audio_prepare.cpp
     src/stt/engine.cpp
     src/stt/model_util.cpp
@@ -149,12 +178,14 @@ add_library(voiceqas_core STATIC
     src/stt/json_util.cpp
     src/stt/session_manager.cpp
     src/stt/vad.cpp
+    src/stt/diarization.cpp
 )
 voiceqas_apply_cxx_std(voiceqas_core)
 voiceqas_enable_coverage(voiceqas_core)
 # yaml-cpp 0.9.0: operator[]/key_to_string breaks under -std=c++26 (GCC 15).
 set_source_files_properties(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/config.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/config/channel_registry.cpp
     TARGET_DIRECTORY voiceqas_core
     PROPERTIES COMPILE_OPTIONS "-std=c++20"
 )
@@ -181,6 +212,30 @@ target_link_libraries(voiceqas_core PUBLIC
     ${VOICEQAS_BCG729_LIB}
     voiceqas_tracing
 )
+if(VOICEQAS_ENABLE_RNNOISE)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(RNNOISE IMPORTED_TARGET rnnoise)
+    endif()
+    if(TARGET PkgConfig::RNNOISE)
+        target_compile_definitions(voiceqas_core PUBLIC VOICEQAS_HAS_RNNOISE=1)
+        target_link_libraries(voiceqas_core PUBLIC PkgConfig::RNNOISE)
+        message(STATUS "RNNoise: enabled (pkg-config)")
+    else()
+        find_path(RNNOISE_INCLUDE_DIR rnnoise.h)
+        find_library(RNNOISE_LIBRARY rnnoise)
+        if(RNNOISE_INCLUDE_DIR AND RNNOISE_LIBRARY)
+            target_compile_definitions(voiceqas_core PUBLIC VOICEQAS_HAS_RNNOISE=1)
+            target_include_directories(voiceqas_core PUBLIC ${RNNOISE_INCLUDE_DIR})
+            target_link_libraries(voiceqas_core PUBLIC ${RNNOISE_LIBRARY})
+            message(STATUS "RNNoise: enabled (${RNNOISE_LIBRARY})")
+        else()
+            message(STATUS "RNNoise: requested but not found — enhancement will no-op")
+        endif()
+    endif()
+else()
+    message(STATUS "RNNoise: disabled (VOICEQAS_ENABLE_RNNOISE=OFF)")
+endif()
 if(VOICEQAS_ENABLE_STT)
     target_compile_definitions(voiceqas_core PUBLIC VOICEQAS_ENABLE_STT=1)
     if(VOICEQAS_STT_CUDA)
@@ -224,6 +279,8 @@ add_library(voiceqas_server STATIC
     src/server/routes/media_routes.cpp
     src/server/routes/ops_routes.cpp
     src/server/routes/stt_routes.cpp
+    src/server/routes/analysis_routes.cpp
+    src/server/routes/config_routes.cpp
     src/server/grpc_mappers.cpp
     src/server/grpc_playground_client.cpp
     src/server/grpc_server.cpp
@@ -267,6 +324,10 @@ if(VOICEQAS_BUILD_TESTS)
         tests/test_stt_session_manager.cpp
         tests/test_audio_pipeline.cpp
         tests/test_stt_gate_extended.cpp
+        tests/test_diarization.cpp
+        tests/test_rnnoise.cpp
+        tests/test_biquad.cpp
+        tests/test_channel_strip.cpp
         tests/test_pipeline_tracker.cpp
         tests/test_transport_sankey.cpp
         tests/test_rtp_packetizer.cpp

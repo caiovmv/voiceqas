@@ -32,11 +32,31 @@ void apply_env_overrides(ServerConfig& server, AnalyzerConfig& analyzer, audio::
     if (const char* v = std::getenv("VOICEQAS_OPENAPI_PATH")) {
         server.openapi_path = v;
     }
+    if (const char* v = std::getenv("VOICEQAS_CHANNELS_CONFIG_PATH")) {
+        server.channels_config_path = v;
+    }
     if (const char* v = std::getenv("VOICEQAS_STT_THRESHOLD")) {
         analyzer.stt_ready_threshold = std::stod(v);
     }
     if (const char* v = std::getenv("VOICEQAS_AUDIO_NORMALIZE")) {
         audio.normalize_enabled = std::string(v) != "0" && std::string(v) != "false";
+        audio.strip.agc.enabled = audio.normalize_enabled;
+    }
+    if (const char* v = std::getenv("VOICEQAS_AUDIO_ENHANCEMENT")) {
+        audio.enhancement.enabled = std::string(v) != "0" && std::string(v) != "false";
+        audio.strip.nr.enabled = audio.enhancement.enabled;
+    }
+    if (const char* v = std::getenv("VOICEQAS_ANALYZER_MAX_SILENCE_READY")) {
+        analyzer.max_silence_ratio_for_ready = std::stod(v);
+    }
+    if (const char* v = std::getenv("VOICEQAS_ANALYZER_HYSTERESIS_OK")) {
+        analyzer.hysteresis_ok_windows = std::stoi(v);
+    }
+    if (const char* v = std::getenv("VOICEQAS_ANALYZER_HYSTERESIS_BAD")) {
+        analyzer.hysteresis_bad_windows = std::stoi(v);
+    }
+    if (const char* v = std::getenv("VOICEQAS_ANALYZER_SPEECH_ENERGY_DBFS")) {
+        analyzer.speech_energy_threshold_dbfs = std::stod(v);
     }
 }
 
@@ -88,6 +108,18 @@ void apply_stt_env(stt::SttConfig& stt) {
     }
     if (const char* v = std::getenv("VOICEQAS_STT_REQUIRE_STT_READY")) {
         stt.require_stt_ready = std::string(v) != "0" && std::string(v) != "false";
+    }
+    if (const char* v = std::getenv("VOICEQAS_DIARIZATION_ENABLED")) {
+        stt.diarization.enabled = std::string(v) != "0" && std::string(v) != "false";
+    }
+    if (const char* v = std::getenv("VOICEQAS_DIARIZATION_FOCUS_PRIMARY")) {
+        stt.diarization.focus_primary = std::string(v) != "0" && std::string(v) != "false";
+    }
+    if (const char* v = std::getenv("VOICEQAS_DIARIZATION_PRIMARY_MODE")) {
+        stt.diarization.primary_mode = v;
+    }
+    if (const char* v = std::getenv("VOICEQAS_DIARIZATION_MIN_TURN_MS")) {
+        stt.diarization.min_turn_ms = std::stoi(v);
     }
 }
 
@@ -176,6 +208,18 @@ void load_yaml_file(
         if (a["min_snr_db"]) analyzer.min_snr_db = a["min_snr_db"].as<double>();
         if (a["max_clipping_ratio"]) analyzer.max_clipping_ratio = a["max_clipping_ratio"].as<double>();
         if (a["max_silence_ratio"]) analyzer.max_silence_ratio = a["max_silence_ratio"].as<double>();
+        if (a["max_silence_ratio_for_ready"]) {
+            analyzer.max_silence_ratio_for_ready = a["max_silence_ratio_for_ready"].as<double>();
+        }
+        if (a["hysteresis_ok_windows"]) {
+            analyzer.hysteresis_ok_windows = a["hysteresis_ok_windows"].as<int>();
+        }
+        if (a["hysteresis_bad_windows"]) {
+            analyzer.hysteresis_bad_windows = a["hysteresis_bad_windows"].as<int>();
+        }
+        if (a["speech_energy_threshold_dbfs"]) {
+            analyzer.speech_energy_threshold_dbfs = a["speech_energy_threshold_dbfs"].as<double>();
+        }
     }
     if (root["audio"]) {
         const auto a = root["audio"];
@@ -185,6 +229,76 @@ void load_yaml_file(
         if (a["agc_attack_ms"]) audio.agc_attack_ms = a["agc_attack_ms"].as<double>();
         if (a["agc_release_ms"]) audio.agc_release_ms = a["agc_release_ms"].as<double>();
         if (a["limiter_ceiling_dbfs"]) audio.limiter_ceiling_dbfs = a["limiter_ceiling_dbfs"].as<double>();
+        if (a["enhancement"]) {
+            const auto e = a["enhancement"];
+            if (e["enabled"]) audio.enhancement.enabled = e["enabled"].as<bool>();
+            if (e["backend"]) audio.enhancement.backend = e["backend"].as<std::string>();
+            if (e["wet_dry"]) audio.enhancement.wet_dry = e["wet_dry"].as<double>();
+        }
+        bool strip_loaded = false;
+        if (a["strip"]) {
+            strip_loaded = true;
+            const auto s = a["strip"];
+            if (s["nr"]) {
+                if (s["nr"]["enabled"]) audio.strip.nr.enabled = s["nr"]["enabled"].as<bool>();
+                if (s["nr"]["wet_dry"]) audio.strip.nr.wet_dry = s["nr"]["wet_dry"].as<double>();
+            }
+            if (s["hpf"]) {
+                if (s["hpf"]["enabled"]) audio.strip.hpf.enabled = s["hpf"]["enabled"].as<bool>();
+                if (s["hpf"]["cutoff_hz"]) audio.strip.hpf.cutoff_hz = s["hpf"]["cutoff_hz"].as<double>();
+            }
+            if (s["eq"]) {
+                if (s["eq"]["enabled"]) audio.strip.eq.enabled = s["eq"]["enabled"].as<bool>();
+                if (s["eq"]["bands"]) {
+                    audio.strip.eq.bands.clear();
+                    for (const auto& b : s["eq"]["bands"]) {
+                        audio::EqBandConfig band;
+                        if (b["freq_hz"]) band.freq_hz = b["freq_hz"].as<double>();
+                        if (b["gain_db"]) band.gain_db = b["gain_db"].as<double>();
+                        if (b["q"]) band.q = b["q"].as<double>();
+                        audio.strip.eq.bands.push_back(band);
+                    }
+                }
+            }
+            if (s["deesser"]) {
+                const auto d = s["deesser"];
+                if (d["enabled"]) audio.strip.deesser.enabled = d["enabled"].as<bool>();
+                if (d["center_hz"]) audio.strip.deesser.center_hz = d["center_hz"].as<double>();
+                if (d["bandwidth_hz"]) audio.strip.deesser.bandwidth_hz = d["bandwidth_hz"].as<double>();
+                if (d["threshold_db"]) audio.strip.deesser.threshold_db = d["threshold_db"].as<double>();
+                if (d["ratio"]) audio.strip.deesser.ratio = d["ratio"].as<double>();
+                if (d["attack_ms"]) audio.strip.deesser.attack_ms = d["attack_ms"].as<double>();
+                if (d["release_ms"]) audio.strip.deesser.release_ms = d["release_ms"].as<double>();
+            }
+            if (s["compressor"]) {
+                const auto c = s["compressor"];
+                if (c["enabled"]) audio.strip.compressor.enabled = c["enabled"].as<bool>();
+                if (c["threshold_db"]) audio.strip.compressor.threshold_db = c["threshold_db"].as<double>();
+                if (c["ratio"]) audio.strip.compressor.ratio = c["ratio"].as<double>();
+                if (c["attack_ms"]) audio.strip.compressor.attack_ms = c["attack_ms"].as<double>();
+                if (c["release_ms"]) audio.strip.compressor.release_ms = c["release_ms"].as<double>();
+                if (c["makeup_db"]) audio.strip.compressor.makeup_db = c["makeup_db"].as<double>();
+            }
+            if (s["limiter"]) {
+                if (s["limiter"]["enabled"]) audio.strip.limiter.enabled = s["limiter"]["enabled"].as<bool>();
+                if (s["limiter"]["ceiling_dbfs"]) {
+                    audio.strip.limiter.ceiling_dbfs = s["limiter"]["ceiling_dbfs"].as<double>();
+                }
+            }
+            if (s["agc"]) {
+                const auto g = s["agc"];
+                if (g["enabled"]) audio.strip.agc.enabled = g["enabled"].as<bool>();
+                if (g["target_rms_dbfs"]) audio.strip.agc.target_rms_dbfs = g["target_rms_dbfs"].as<double>();
+                if (g["max_gain_db"]) audio.strip.agc.max_gain_db = g["max_gain_db"].as<double>();
+                if (g["attack_ms"]) audio.strip.agc.attack_ms = g["attack_ms"].as<double>();
+                if (g["release_ms"]) audio.strip.agc.release_ms = g["release_ms"].as<double>();
+            }
+        }
+        if (strip_loaded) {
+            audio.sync_legacy_from_strip();
+        } else {
+            audio.sync_strip_from_legacy();
+        }
     }
     if (root["media"]) {
         const auto m = root["media"];
@@ -231,6 +345,15 @@ void load_yaml_file(
             }
             if (v["num_threads"]) stt_cfg.vad.num_threads = v["num_threads"].as<int>();
             if (v["provider"]) stt_cfg.vad.provider = v["provider"].as<std::string>();
+        }
+        if (s["diarization"]) {
+            const auto d = s["diarization"];
+            if (d["enabled"]) stt_cfg.diarization.enabled = d["enabled"].as<bool>();
+            if (d["focus_primary"]) stt_cfg.diarization.focus_primary = d["focus_primary"].as<bool>();
+            if (d["primary_mode"]) {
+                stt_cfg.diarization.primary_mode = d["primary_mode"].as<std::string>();
+            }
+            if (d["min_turn_ms"]) stt_cfg.diarization.min_turn_ms = d["min_turn_ms"].as<int>();
         }
     }
     if (root["ops"]) {

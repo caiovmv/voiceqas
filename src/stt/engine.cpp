@@ -13,6 +13,7 @@
 #include "sherpa-onnx/c-api/c-api.h"
 
 #include "voiceqas/ports/pipeline_telemetry.hpp"
+#include "voiceqas/audio/resampler.hpp"
 #include "voiceqas/stt/provider.hpp"
 #include "voiceqas/stt/vad_model.hpp"
 
@@ -201,6 +202,120 @@ TranscriptResult decode_with_recognizer(
                                .count();
     return result;
 }
+
+
+/// Whisper offline is reliable up to ~30s. Longer audio is split via Silero VAD
+/// (or fixed windows if VAD finds no turns), decoded per chunk, then joined.
+TranscriptResult decode_whisper_vad_chunks(
+    const SherpaOnnxOfflineRecognizer* recognizer,
+    const std::string& model_label,
+    const std::string& language,
+    std::span<const int16_t> pcm,
+    int sample_rate,
+    const SileroVad* vad) {
+    constexpr int64_t kMaxChunkMs = 28000;
+    constexpr int64_t kFixedWindowMs = 25000;
+
+    TranscriptResult base;
+    base.model = model_label;
+    base.language = language;
+    base.duration_ms =
+        pcm.empty() ? 0 : static_cast<int64_t>(pcm.size()) * 1000 / std::max(1, sample_rate);
+
+    if (base.duration_ms <= kMaxChunkMs || pcm.empty() || !recognizer) {
+        return decode_with_recognizer(recognizer, model_label, language, pcm, sample_rate);
+    }
+
+    std::vector<int16_t> pcm16_storage;
+    std::span<const int16_t> pcm16 = pcm;
+    if (sample_rate != 16000) {
+        pcm16_storage = audio::resample_sinc_pcm16(pcm, sample_rate, 16000);
+        pcm16 = pcm16_storage;
+    }
+
+    struct Chunk {
+        int64_t start_ms = 0;
+        int64_t end_ms = 0;
+    };
+    std::vector<Chunk> chunks;
+
+    auto push_split = [&](int64_t start_ms, int64_t end_ms) {
+        if (end_ms <= start_ms) {
+            return;
+        }
+        for (int64_t s = start_ms; s < end_ms; s += kFixedWindowMs) {
+            chunks.push_back(Chunk{s, std::min(s + kFixedWindowMs, end_ms)});
+        }
+    };
+
+    if (vad && vad->ready()) {
+        const auto turns = vad->detect_turns(pcm16, 16000);
+        for (const auto& turn : turns) {
+            const auto dur = turn.end_ms - turn.start_ms;
+            if (dur > kMaxChunkMs) {
+                push_split(turn.start_ms, turn.end_ms);
+            } else if (dur >= 300) {
+                chunks.push_back(Chunk{turn.start_ms, turn.end_ms});
+            }
+        }
+    }
+    // If Silero coverage is weak (e.g. a single ~200ms tail), use fixed 25s
+    // windows on the full waveform so Whisper sees the whole call.
+    int64_t covered_ms = 0;
+    for (const auto& c : chunks) {
+        covered_ms += std::max<int64_t>(0, c.end_ms - c.start_ms);
+    }
+    if (chunks.empty() || covered_ms * 2 < base.duration_ms) {
+        chunks.clear();
+        push_split(0, base.duration_ms);
+    }
+
+    TranscriptResult combined;
+    combined.ok = true;
+    combined.model = model_label;
+    combined.language = language;
+    combined.duration_ms = base.duration_ms;
+    std::string joined;
+    int64_t total_proc = 0;
+
+    for (const auto& c : chunks) {
+        const auto start = static_cast<size_t>(std::max<int64_t>(0, c.start_ms) * 16);
+        const auto end = static_cast<size_t>(std::max<int64_t>(0, c.end_ms) * 16);
+        if (start >= pcm16.size() || end <= start) {
+            continue;
+        }
+        const auto clipped = std::min(end, pcm16.size());
+        auto span = std::span<const int16_t>(
+            pcm16.data() + static_cast<std::ptrdiff_t>(start), clipped - start);
+        auto part = decode_with_recognizer(recognizer, model_label, language, span, 16000);
+        total_proc += part.processing_ms;
+        if (!part.ok && combined.ok) {
+            combined.ok = false;
+            combined.error = part.error;
+        }
+        const auto piece = trim_copy(part.text);
+        if (!piece.empty()) {
+            if (!joined.empty()) {
+                joined += " ";
+            }
+            joined += piece;
+            TranscriptSegment seg;
+            seg.start_ms = c.start_ms;
+            seg.end_ms = c.end_ms;
+            seg.text = piece;
+            combined.segments.push_back(std::move(seg));
+        }
+    }
+
+    combined.text = joined;
+    combined.processing_ms = total_proc;
+    if (combined.text.empty() && combined.ok) {
+        // Last resort: one-shot (may truncate) rather than empty.
+        return decode_with_recognizer(recognizer, model_label, language, pcm, sample_rate);
+    }
+    return combined;
+}
+
 
 }  // namespace
 
@@ -475,14 +590,179 @@ TranscriptResult SttEngine::transcribe_pcm16(
     std::vector<int16_t> working(pcm.begin(), pcm.end());
     int rate = sample_rate;
     const auto bytes_in = working.size() * sizeof(int16_t);
+    const bool diarization_on = options.diarization_enabled.value_or(config_.diarization.enabled);
+    bool focus_primary =
+        options.focus_primary.value_or(config_.diarization.focus_primary) && diarization_on;
     const bool apply_vad =
         options.apply_vad.value_or(config_.vad.enabled && config_.vad.apply_before_stt);
-    if (apply_vad && impl_->vad && impl_->vad->ready()) {
+    std::vector<SpeechTurn> diarization_turns;
+    int primary_speaker = -1;
+
+    auto run_asr = [&](std::span<const int16_t> chunk, int chunk_rate) -> TranscriptResult {
+        if (choice == SttModelChoice::Parakeet) {
+            if (!bundle.parakeet) {
+                TranscriptResult unavailable;
+                unavailable.error = "parakeet model unavailable for provider " + provider;
+                return unavailable;
+            }
+            return decode_with_recognizer(
+                bundle.parakeet, impl_->parakeet_paths.label, language, chunk, chunk_rate);
+        }
+        if (choice == SttModelChoice::Whisper) {
+            if (!bundle.whisper) {
+                TranscriptResult unavailable;
+                unavailable.error = "whisper model unavailable for provider " + provider;
+                return unavailable;
+            }
+            return decode_whisper_vad_chunks(
+                bundle.whisper,
+                impl_->whisper_paths.label,
+                language,
+                chunk,
+                chunk_rate,
+                impl_->vad.get());
+        }
+        auto primary = decode_with_recognizer(
+            bundle.parakeet, impl_->parakeet_paths.label, language, chunk, chunk_rate);
+        if (primary.ok && !trim_copy(primary.text).empty()) {
+            return primary;
+        }
+        if (bundle.whisper) {
+            auto fallback = decode_whisper_vad_chunks(
+                bundle.whisper,
+                impl_->whisper_paths.label,
+                language,
+                chunk,
+                chunk_rate,
+                impl_->vad.get());
+            if (fallback.ok) {
+                if (!primary.text.empty() && trim_copy(fallback.text).empty()) {
+                    fallback.text = primary.text;
+                }
+                return fallback;
+            }
+        }
+        return primary;
+    };
+
+    if ((diarization_on || apply_vad) && impl_->vad && impl_->vad->ready()) {
         tracing::StageSpan vad_span("vad", "Silero VAD", options.telemetry_session_id.value_or(""));
         vad_span.set_bytes_in(bytes_in);
         const auto vad_started = std::chrono::steady_clock::now();
-        working = impl_->vad->extract_speech(working, rate);
-        rate = 16000;
+
+        if (diarization_on) {
+            DiarizationConfig dia_cfg = config_.diarization;
+            dia_cfg.enabled = true;
+            dia_cfg.focus_primary = focus_primary;
+            auto dia = impl_->vad->diarize(working, rate, dia_cfg);
+            diarization_turns = std::move(dia.turns);
+            primary_speaker = dia.primary_speaker;
+            rate = 16000;
+
+            if (focus_primary) {
+                auto primary = std::move(dia.primary_pcm);
+                if (!primary.empty()) {
+                    working = std::move(primary);
+                } else {
+                    // Primary pick returned nothing: fall back to VAD speech so the
+                    // Lab "depois" pass is not blank when Silero turns miss.
+                    working = impl_->vad->extract_speech(working, sample_rate);
+                }
+                rate = 16000;
+                // Guard: primary crop can be ~200ms on long calls -> Whisper stub "E".
+                const auto input_ms =
+                    static_cast<int64_t>(pcm.size()) * 1000 / std::max(1, sample_rate);
+                const auto keep_ms =
+                    static_cast<int64_t>(working.size()) * 1000 / 16000;
+                const bool too_short =
+                    keep_ms < 5000 || (input_ms > 0 && keep_ms * 10 < input_ms);
+                if (too_short) {
+                    focus_primary = false;
+                    working.assign(pcm.begin(), pcm.end());
+                    rate = sample_rate;
+                }
+            }
+            if (!focus_primary) {
+                // !focus_primary: ALWAYS full-audio ASR for aggregate text.
+                // Empty Silero turns used to fall through to extract_speech and
+                // return Whisper/Parakeet stubs ("Yeah." / "Ora") in ~30ms.
+                TranscriptResult combined;
+                combined.ok = true;
+                combined.language = language;
+                combined.primary_speaker = primary_speaker;
+                int64_t total_proc = 0;
+                std::vector<int16_t> pcm16 = working;
+                if (sample_rate != 16000) {
+                    pcm16 = audio::resample_sinc_pcm16(working, sample_rate, 16000);
+                }
+                auto full = run_asr(pcm16, 16000);
+                combined.text = full.text;
+                combined.model = full.model;
+                combined.ok = full.ok;
+                combined.error = full.error;
+                combined.duration_ms = full.duration_ms;
+                total_proc += full.processing_ms;
+                for (auto& turn : diarization_turns) {
+                    const auto start = static_cast<size_t>(std::max<int64_t>(0, turn.start_ms) * 16);
+                    const auto end = static_cast<size_t>(std::max<int64_t>(0, turn.end_ms) * 16);
+                    if (start >= pcm16.size() || end <= start) {
+                        continue;
+                    }
+                    const auto clipped = std::min(end, pcm16.size());
+                    auto turn_pcm = std::span<const int16_t>(
+                        pcm16.data() + static_cast<std::ptrdiff_t>(start),
+                        clipped - start);
+                    auto part = run_asr(turn_pcm, 16000);
+                    turn.text = part.text;
+                    total_proc += part.processing_ms;
+                    if (!part.ok && combined.ok) {
+                        combined.ok = false;
+                        if (combined.error.empty()) {
+                            combined.error = part.error;
+                        }
+                    }
+                    TranscriptSegment seg;
+                    seg.start_ms = turn.start_ms;
+                    seg.end_ms = turn.end_ms;
+                    seg.text = part.text;
+                    seg.speaker_id = turn.speaker_id;
+                    combined.segments.push_back(std::move(seg));
+                }
+                // Turn-aligned segments win when Silero found speech; otherwise keep
+                // full-audio ASR chunks (Whisper 25s windows) so Lab JSON matches legacy shape.
+                if (combined.segments.empty() && !full.segments.empty()) {
+                    combined.segments = std::move(full.segments);
+                }
+                if (trim_copy(combined.text).empty()) {
+                    std::string joined;
+                    for (const auto& turn : diarization_turns) {
+                        if (!joined.empty() && !turn.text.empty()) {
+                            joined += " ";
+                        }
+                        joined += turn.text;
+                    }
+                    combined.text = joined;
+                }
+                combined.processing_ms = total_proc;
+                combined.diarization_turns = diarization_turns;
+                const auto vad_ms = std::chrono::duration<double, std::milli>(
+                                        std::chrono::steady_clock::now() - vad_started)
+                                        .count();
+                vad_span.set_metric("voiceqas.duration_ms", vad_ms);
+                if (options.telemetry_session_id) {
+                    telemetry_->record_vad(
+                        *options.telemetry_session_id,
+                        vad_ms,
+                        bytes_in,
+                        pcm16.size() * sizeof(int16_t));
+                }
+                return combined;
+            }
+        } else {
+            working = impl_->vad->extract_speech(working, rate);
+            rate = 16000;
+        }
+
         const auto vad_ms = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - vad_started)
                                 .count();
@@ -498,71 +778,26 @@ TranscriptResult SttEngine::transcribe_pcm16(
         if (working.empty()) {
             TranscriptResult empty;
             empty.ok = true;
-            empty.model = "vad-filtered";
+            empty.model = focus_primary ? "diarization-filtered" : "vad-filtered";
             empty.language = language;
+            empty.diarization_turns = std::move(diarization_turns);
+            empty.primary_speaker = primary_speaker;
             return empty;
         }
     }
 
-    auto try_parakeet = [&]() -> TranscriptResult {
-        if (!bundle.parakeet) {
-            TranscriptResult unavailable;
-            unavailable.error = "parakeet model unavailable for provider " + provider;
-            return unavailable;
-        }
-        tracing::StageSpan asr_span("asr", "ASR Parakeet", options.telemetry_session_id.value_or(""));
-        asr_span.set_bytes_in(working.size() * sizeof(int16_t));
-        auto result = decode_with_recognizer(
-            bundle.parakeet, impl_->parakeet_paths.label, language, working, rate);
-        asr_span.set_metric("voiceqas.duration_ms", static_cast<double>(result.processing_ms));
-        asr_span.set_metric("voiceqas.model", result.model);
+    auto attach_dia = [&](TranscriptResult result) {
+        result.diarization_turns = diarization_turns;
+        result.primary_speaker = primary_speaker;
         return result;
     };
 
-    auto try_whisper = [&]() -> TranscriptResult {
-        if (!bundle.whisper) {
-            TranscriptResult unavailable;
-            unavailable.error = "whisper model unavailable for provider " + provider;
-            return unavailable;
-        }
-        tracing::StageSpan asr_span("asr", "ASR Whisper", options.telemetry_session_id.value_or(""));
-        asr_span.set_bytes_in(working.size() * sizeof(int16_t));
-        auto result = decode_with_recognizer(
-            bundle.whisper, impl_->whisper_paths.label, language, working, rate);
-        asr_span.set_metric("voiceqas.duration_ms", static_cast<double>(result.processing_ms));
-        asr_span.set_metric("voiceqas.model", result.model);
-        return result;
-    };
-
-    if (choice == SttModelChoice::Parakeet) {
-        return try_parakeet();
-    }
-    if (choice == SttModelChoice::Whisper) {
-        return try_whisper();
-    }
-
-    auto primary = try_parakeet();
-    if (primary.ok && !trim_copy(primary.text).empty()) {
-        return primary;
-    }
-
-    auto fallback = try_whisper();
-    if (fallback.ok) {
-        if (!primary.text.empty() && trim_copy(fallback.text).empty()) {
-            fallback.text = primary.text;
-        }
-        if (!primary.error.empty() && trim_copy(fallback.text).empty()) {
-            fallback.error = primary.error + "; whisper fallback also empty";
-        }
-        return fallback;
-    }
-
-    if (!primary.error.empty()) {
-        primary.error += "; whisper fallback failed: " + fallback.error;
-    } else {
-        primary.error = fallback.error;
-    }
-    return primary;
+    tracing::StageSpan asr_span("asr", "ASR", options.telemetry_session_id.value_or(""));
+    asr_span.set_bytes_in(working.size() * sizeof(int16_t));
+    auto result = run_asr(working, rate);
+    asr_span.set_metric("voiceqas.duration_ms", static_cast<double>(result.processing_ms));
+    asr_span.set_metric("voiceqas.model", result.model);
+    return attach_dia(std::move(result));
 }
 
 }  // namespace voiceqas::stt

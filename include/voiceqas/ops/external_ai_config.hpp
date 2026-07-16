@@ -9,7 +9,7 @@ struct ExternalAiConfig {
     bool enabled = false;
     std::string provider = "ollama";
     std::string base_url = "http://host.docker.internal:11434";
-    std::string model = "cryptidbleh/gemma4-claude-sonnet-4.6";
+    std::string model = "gemma4:e4b";
     int timeout_ms = 60000;
 };
 

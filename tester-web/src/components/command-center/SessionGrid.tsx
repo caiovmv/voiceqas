@@ -30,17 +30,31 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-export function SessionGrid({ sessions }: { sessions: TrackedSession[] }) {
+function transportLabel(meta: TrackedSession['mediaMeta']): string {
+  if (!meta) return '—';
+  if (meta.channel_id && meta.channel_id !== 'default') return meta.channel_id;
+  return 'default';
+}
+
+export function SessionGrid({
+  sessions,
+  compact = false,
+  showChannelColumn = false,
+}: {
+  sessions: TrackedSession[];
+  compact?: boolean;
+  showChannelColumn?: boolean;
+}) {
   if (sessions.length === 0) {
     return (
       <p className="muted cc-empty">
-        Nenhuma sessão ainda. Conecte o ops WebSocket e aguarde tráfego UDP/WS em produção.
+        Nenhuma sessão ainda. Ops WS reconecta a cada 10s — aguarde tráfego ou registre media.
       </p>
     );
   }
 
   return (
-    <div className="cc-session-grid">
+    <div className={`cc-session-grid ${compact ? 'compact' : ''}`}>
       {sessions.map((s) => {
         const m = s.latest;
         const scores = s.history.map((h) => h.composite_score);
@@ -49,6 +63,11 @@ export function SessionGrid({ sessions }: { sessions: TrackedSession[] }) {
             <header>
               <code className="cc-session-id">{s.sessionId}</code>
               {s.mediaMeta && <span className="badge ok">media</span>}
+              {showChannelColumn && (
+                <span className="badge" title="Canal / transporte">
+                  {transportLabel(s.mediaMeta)}
+                </span>
+              )}
             </header>
             {m ? (
               <>
@@ -64,33 +83,37 @@ export function SessionGrid({ sessions }: { sessions: TrackedSession[] }) {
                     </span>
                   </li>
                   <li>SNR {m.snr_estimate_db.toFixed(1)} dB</li>
-                  <li>loss {m.packet_loss_pct.toFixed(1)}%</li>
-                  <li>jitter {m.jitter_ms.toFixed(1)} ms</li>
-                  <li>RMS {m.rms_dbfs.toFixed(1)} dBFS</li>
+                  {!compact && (
+                    <>
+                      <li>loss {m.packet_loss_pct.toFixed(1)}%</li>
+                      <li>jitter {m.jitter_ms.toFixed(1)} ms</li>
+                      <li>RMS {m.rms_dbfs.toFixed(1)} dBFS</li>
+                    </>
+                  )}
                 </ul>
-                <div className="cc-spark-row">
-                  <span className="muted">score</span>
-                  <Sparkline values={scores} />
-                </div>
+                {!compact && (
+                  <div className="cc-spark-row">
+                    <span className="muted">score</span>
+                    <Sparkline values={scores} />
+                  </div>
+                )}
               </>
             ) : (
               <p className="muted">Aguardando métricas…</p>
             )}
-            {s.mediaMeta && (
+            {s.mediaMeta && !compact && (
               <p className="muted cc-media-meta">
                 {String(s.mediaMeta.format)} @ {s.mediaMeta.sample_rate}Hz
+                {s.mediaMeta.channel_id ? ` · canal ${s.mediaMeta.channel_id}` : ''}
                 {s.mediaMeta.inbound_host
                   ? ` ← ${s.mediaMeta.inbound_host}:${s.mediaMeta.inbound_port}`
-                  : ''}
-                {s.mediaMeta.remote_host
-                  ? ` → ${s.mediaMeta.remote_host}:${s.mediaMeta.remote_port}`
                   : ''}
               </p>
             )}
             {s.lastStt?.text && (
               <p className="cc-stt-snippet" title={s.lastStt.type}>
-                STT: {s.lastStt.text.slice(0, 120)}
-                {s.lastStt.text.length > 120 ? '…' : ''}
+                STT: {s.lastStt.text.slice(0, compact ? 80 : 120)}
+                {s.lastStt.text.length > (compact ? 80 : 120) ? '…' : ''}
               </p>
             )}
           </article>

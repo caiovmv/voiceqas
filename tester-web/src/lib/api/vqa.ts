@@ -6,6 +6,7 @@ import { concatFrames, parseWsJson, sleep } from './util';
 export async function analyzeRestBatch(
   encoded: EncodedPayload,
   config: CodecConfig,
+  extraHeaders: Record<string, string> = {},
 ): Promise<BatchResult> {
   const allBytes = concatFrames(encoded.frames);
   const res = await fetch(`${apiBase}/v1/analyze/batch`, {
@@ -15,6 +16,7 @@ export async function analyzeRestBatch(
       'X-Audio-Format': config.format,
       'X-Sample-Rate': String(config.sampleRate),
       'X-Session-Id': config.sessionId,
+      ...extraHeaders,
     },
     body: allBytes,
   });

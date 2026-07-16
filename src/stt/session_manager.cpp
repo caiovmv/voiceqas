@@ -96,15 +96,19 @@ void SttSessionManager::ensure_session_bound(const std::string& session_id) {
     if (!bound_sessions_.insert(session_id).second) {
         return;
     }
-    stt::TranscribeOptions opts;
-    opts.apply_vad = config_.vad.enabled;
+    stt::TranscribeOptions opts = default_options_;
+    // Focus-primary implies Silero turn filter; else optional silence strip.
+    opts.focus_primary = config_.diarization.enabled && config_.diarization.focus_primary;
+    opts.apply_vad = config_.vad.enabled && config_.vad.apply_before_stt && !opts.focus_primary.value_or(false);
     sessions_[session_id].options = opts;
 }
 
 void SttSessionManager::append_pcm(
     const std::string& session_id,
     std::span<const int16_t> pcm,
-    int sample_rate) {
+    int sample_rate,
+    double shared_agc_ms,
+    double shared_enhancement_ms) {
     {
         std::lock_guard lock(mutex_);
         const auto it = sessions_.find(session_id);
@@ -122,7 +126,8 @@ void SttSessionManager::append_pcm(
 
     ports::SttPrepareTimings timings{
         .decode_ms = 0.0,
-        .agc_ms = 0.0,
+        .agc_ms = shared_agc_ms,
+        .enhancement_ms = shared_enhancement_ms,
         .resample_ms = resample_ms,
         .pcm_bytes = resampled.size() * sizeof(int16_t),
         .payload_bytes = pcm.size() * sizeof(int16_t),
@@ -167,6 +172,7 @@ void SttSessionManager::append_chunk(
     ports::SttPrepareTimings timings{
         .decode_ms = prepared.decode_ms,
         .agc_ms = prepared.agc_ms,
+        .enhancement_ms = prepared.enhancement_ms,
         .resample_ms = prepared.resample_ms,
         .pcm_bytes = prepared.pcm.size() * sizeof(int16_t),
         .payload_bytes = prepared.payload_bytes,
@@ -304,11 +310,27 @@ TranscriptResult SttSessionManager::transcribe_batch(
     telemetry_->set_session_codec(session_id, audio_format_to_string(format));
     telemetry_->record_rtp_ingress(session_id, payload.size(), 0.0, 0.0);
 
+    audio::AudioProcessingConfig prep_cfg = audio_config_;
+    if (options.strip.has_value()) {
+        prep_cfg.strip = *options.strip;
+        prep_cfg.sync_legacy_from_strip();
+    }
+    if (options.normalize_enabled.has_value()) {
+        prep_cfg.normalize_enabled = *options.normalize_enabled;
+        prep_cfg.strip.agc.enabled = *options.normalize_enabled;
+    }
+    if (options.enhancement_enabled.has_value()) {
+        prep_cfg.enhancement.enabled = *options.enhancement_enabled;
+        prep_cfg.strip.nr.enabled = *options.enhancement_enabled;
+    }
+    prep_cfg.sync_legacy_from_strip();
+
     const auto prepared = prepare_audio_for_stt(
-        format, payload, sample_rate, target_sample_rate_, audio_config_);
+        format, payload, sample_rate, target_sample_rate_, prep_cfg);
     ports::SttPrepareTimings timings{
         .decode_ms = prepared.decode_ms,
         .agc_ms = prepared.agc_ms,
+        .enhancement_ms = prepared.enhancement_ms,
         .resample_ms = prepared.resample_ms,
         .pcm_bytes = prepared.pcm.size() * sizeof(int16_t),
         .payload_bytes = prepared.payload_bytes,

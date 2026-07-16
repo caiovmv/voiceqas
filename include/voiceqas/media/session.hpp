@@ -23,6 +23,7 @@ namespace voiceqas::media {
 
 struct MediaSessionConfig {
     std::string session_id;
+    std::string channel_id = "default";
     AudioFormat format = AudioFormat::RtpG722;
     int sample_rate = 0;
     std::string remote_host;
