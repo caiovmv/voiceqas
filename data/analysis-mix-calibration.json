@@ -1,0 +1,661 @@
+{
+  "model": "whisper",
+  "provider": "cuda",
+  "wavs": [
+    "chamada_c1f8e735-b04c-4b5b-9dd0-5d380d6be330.wav",
+    "chamada_nespresso_cliente_testando.wav"
+  ],
+  "per_wav": {
+    "chamada_c1f8e735-b04c-4b5b-9dd0-5d380d6be330.wav": {
+      "H0": {
+        "hyp_id": "H0",
+        "label": "legacy",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": false,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.6,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": false
+          }
+        },
+        "stt": {
+          "chars": 1806,
+          "processing_ms": 19335,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, sou a especialista da Nespresso, com quem eu falo? Oi, você falou com a Alexandre. Prazer, Alexandre, encontrei aqu"
+        },
+        "vqa": {
+          "composite_score": 80.14591760472243,
+          "ready_ratio": 0.5474006116207951,
+          "overall_window_mean": 80.14591760472243,
+          "speech_window_count": 233.0
+        }
+      },
+      "H1": {
+        "hyp_id": "H1",
+        "label": "default_today",
+        "mix": {
+          "agc": true,
+          "rnnoise": true,
+          "silero": true,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 1624,
+          "processing_ms": 18637,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 0.9173989455184534,
+          "text_head": "Olá, sou a especialista da Nespresso, com quem eu falo? Oi, você fala com a Alexandre. Prazer, Alexandre, encontrei aqui"
+        },
+        "vqa": {
+          "composite_score": 99.04715775546445,
+          "ready_ratio": 0.41590214067278286,
+          "overall_window_mean": 83.59072451347139,
+          "speech_window_count": 209.0
+        }
+      },
+      "H2": {
+        "hyp_id": "H2",
+        "label": "no_denoise",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": true,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 1806,
+          "processing_ms": 18819,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, sou a especialista da Nespresso, com quem eu falo? Oi, você falou com a Alexandre. Prazer, Alexandre, encontrei aqu"
+        },
+        "vqa": {
+          "composite_score": 98.49150571520566,
+          "ready_ratio": 0.48623853211009177,
+          "overall_window_mean": 85.12256411239986,
+          "speech_window_count": 233.0
+        }
+      },
+      "H3": {
+        "hyp_id": "H3",
+        "label": "agc_split_gate",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": false,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 1806,
+          "processing_ms": 18234,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, sou a especialista da Nespresso, com quem eu falo? Oi, você falou com a Alexandre. Prazer, Alexandre, encontrei aqu"
+        },
+        "vqa": {
+          "composite_score": 98.49150571520566,
+          "ready_ratio": 0.48623853211009177,
+          "overall_window_mean": 85.12256411239986,
+          "speech_window_count": 233.0
+        }
+      },
+      "H4": {
+        "hyp_id": "H4",
+        "label": "denoise_only",
+        "mix": {
+          "agc": true,
+          "rnnoise": true,
+          "silero": false,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 1624,
+          "processing_ms": 18238,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 0.9173989455184534,
+          "text_head": "Olá, sou a especialista da Nespresso, com quem eu falo? Oi, você fala com a Alexandre. Prazer, Alexandre, encontrei aqui"
+        },
+        "vqa": {
+          "composite_score": 99.04715775546445,
+          "ready_ratio": 0.41590214067278286,
+          "overall_window_mean": 83.59072451347139,
+          "speech_window_count": 209.0
+        }
+      },
+      "H5": {
+        "hyp_id": "H5",
+        "label": "soft_gate",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": true,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 55,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.55,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 1806,
+          "processing_ms": 18828,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, sou a especialista da Nespresso, com quem eu falo? Oi, você falou com a Alexandre. Prazer, Alexandre, encontrei aqu"
+        },
+        "vqa": {
+          "composite_score": 98.49150571520566,
+          "ready_ratio": 0.5198776758409785,
+          "overall_window_mean": 85.12256411239986,
+          "speech_window_count": 233.0
+        }
+      }
+    },
+    "chamada_nespresso_cliente_testando.wav": {
+      "H0": {
+        "hyp_id": "H0",
+        "label": "legacy",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": false,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.6,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": false
+          }
+        },
+        "stt": {
+          "chars": 2826,
+          "processing_ms": 31336,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, eu sou a assistente virtual da Nespresso. Para uma melhor experiência, caso esteja utilizando o Viva Voz, sugerimos"
+        },
+        "vqa": {
+          "composite_score": 80.78061616037091,
+          "ready_ratio": 0.4846846846846847,
+          "overall_window_mean": 80.78061616037091,
+          "speech_window_count": 344.0
+        }
+      },
+      "H1": {
+        "hyp_id": "H1",
+        "label": "default_today",
+        "mix": {
+          "agc": true,
+          "rnnoise": true,
+          "silero": true,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 2776,
+          "processing_ms": 29685,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.375,
+          "token_f1_vs_legacy": 0.9393627954779035,
+          "text_head": "Olá, eu sou a assistente virtual da AliExpresso. Para uma melhor experiência, caso esteja utilizando o VivaVoz, sugerimo"
+        },
+        "vqa": {
+          "composite_score": 100.00000000000004,
+          "ready_ratio": 0.3027027027027027,
+          "overall_window_mean": 84.64277533329658,
+          "speech_window_count": 334.0
+        }
+      },
+      "H2": {
+        "hyp_id": "H2",
+        "label": "no_denoise",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": true,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 2826,
+          "processing_ms": 31472,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, eu sou a assistente virtual da Nespresso. Para uma melhor experiência, caso esteja utilizando o Viva Voz, sugerimos"
+        },
+        "vqa": {
+          "composite_score": 100.00000000000007,
+          "ready_ratio": 0.35135135135135137,
+          "overall_window_mean": 85.64367109979335,
+          "speech_window_count": 344.0
+        }
+      },
+      "H3": {
+        "hyp_id": "H3",
+        "label": "agc_split_gate",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": false,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 2826,
+          "processing_ms": 30951,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, eu sou a assistente virtual da Nespresso. Para uma melhor experiência, caso esteja utilizando o Viva Voz, sugerimos"
+        },
+        "vqa": {
+          "composite_score": 100.00000000000007,
+          "ready_ratio": 0.35135135135135137,
+          "overall_window_mean": 85.64367109979335,
+          "speech_window_count": 344.0
+        }
+      },
+      "H4": {
+        "hyp_id": "H4",
+        "label": "denoise_only",
+        "mix": {
+          "agc": true,
+          "rnnoise": true,
+          "silero": false,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 65,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.4,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 2776,
+          "processing_ms": 31260,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.375,
+          "token_f1_vs_legacy": 0.9393627954779035,
+          "text_head": "Olá, eu sou a assistente virtual da AliExpresso. Para uma melhor experiência, caso esteja utilizando o VivaVoz, sugerimo"
+        },
+        "vqa": {
+          "composite_score": 100.00000000000004,
+          "ready_ratio": 0.3027027027027027,
+          "overall_window_mean": 84.64277533329658,
+          "speech_window_count": 334.0
+        }
+      },
+      "H5": {
+        "hyp_id": "H5",
+        "label": "soft_gate",
+        "mix": {
+          "agc": true,
+          "rnnoise": false,
+          "silero": true,
+          "focus_primary": false,
+          "gate": {
+            "stt_ready_threshold": 55,
+            "min_snr_db": 12,
+            "max_clipping_ratio": 0.02,
+            "max_silence_ratio": 0.6,
+            "max_silence_ratio_for_ready": 0.55,
+            "hysteresis_ok_windows": 2,
+            "hysteresis_bad_windows": 1,
+            "split_quality_from_presence": true
+          }
+        },
+        "stt": {
+          "chars": 2826,
+          "processing_ms": 31730,
+          "model": "whisper-large-v3-turbo-pt",
+          "stub": false,
+          "keyword_recall": 0.5,
+          "token_f1_vs_legacy": 1.0,
+          "text_head": "Olá, eu sou a assistente virtual da Nespresso. Para uma melhor experiência, caso esteja utilizando o Viva Voz, sugerimos"
+        },
+        "vqa": {
+          "composite_score": 100.00000000000007,
+          "ready_ratio": 0.44504504504504505,
+          "overall_window_mean": 85.64367109979335,
+          "speech_window_count": 344.0
+        }
+      }
+    }
+  },
+  "baseline_kr": 0.5,
+  "ranking": [
+    {
+      "hyp_id": "H0",
+      "label": "legacy",
+      "mix": {
+        "agc": true,
+        "rnnoise": false,
+        "silero": false,
+        "focus_primary": false,
+        "gate": {
+          "stt_ready_threshold": 65,
+          "min_snr_db": 12,
+          "max_clipping_ratio": 0.02,
+          "max_silence_ratio": 0.6,
+          "max_silence_ratio_for_ready": 0.6,
+          "hysteresis_ok_windows": 2,
+          "hysteresis_bad_windows": 1,
+          "split_quality_from_presence": false
+        }
+      },
+      "avg_keyword_recall": 0.5,
+      "avg_ready_ratio": 0.5160426481527399,
+      "avg_composite_score": 80.46326688254666,
+      "avg_token_f1_vs_legacy": 1.0,
+      "any_stub": false,
+      "score_key": [
+        1,
+        0.5,
+        0.5160426481527399,
+        80.46326688254666,
+        1.0
+      ]
+    },
+    {
+      "hyp_id": "H5",
+      "label": "soft_gate",
+      "mix": {
+        "agc": true,
+        "rnnoise": false,
+        "silero": true,
+        "focus_primary": false,
+        "gate": {
+          "stt_ready_threshold": 55,
+          "min_snr_db": 12,
+          "max_clipping_ratio": 0.02,
+          "max_silence_ratio": 0.6,
+          "max_silence_ratio_for_ready": 0.55,
+          "hysteresis_ok_windows": 2,
+          "hysteresis_bad_windows": 1,
+          "split_quality_from_presence": true
+        }
+      },
+      "avg_keyword_recall": 0.5,
+      "avg_ready_ratio": 0.4824613604430118,
+      "avg_composite_score": 99.24575285760287,
+      "avg_token_f1_vs_legacy": 1.0,
+      "any_stub": false,
+      "score_key": [
+        1,
+        0.5,
+        0.4824613604430118,
+        99.24575285760287,
+        1.0
+      ]
+    },
+    {
+      "hyp_id": "H2",
+      "label": "no_denoise",
+      "mix": {
+        "agc": true,
+        "rnnoise": false,
+        "silero": true,
+        "focus_primary": false,
+        "gate": {
+          "stt_ready_threshold": 65,
+          "min_snr_db": 12,
+          "max_clipping_ratio": 0.02,
+          "max_silence_ratio": 0.6,
+          "max_silence_ratio_for_ready": 0.4,
+          "hysteresis_ok_windows": 2,
+          "hysteresis_bad_windows": 1,
+          "split_quality_from_presence": true
+        }
+      },
+      "avg_keyword_recall": 0.5,
+      "avg_ready_ratio": 0.41879494173072157,
+      "avg_composite_score": 99.24575285760287,
+      "avg_token_f1_vs_legacy": 1.0,
+      "any_stub": false,
+      "score_key": [
+        1,
+        0.5,
+        0.41879494173072157,
+        99.24575285760287,
+        1.0
+      ]
+    },
+    {
+      "hyp_id": "H3",
+      "label": "agc_split_gate",
+      "mix": {
+        "agc": true,
+        "rnnoise": false,
+        "silero": false,
+        "focus_primary": false,
+        "gate": {
+          "stt_ready_threshold": 65,
+          "min_snr_db": 12,
+          "max_clipping_ratio": 0.02,
+          "max_silence_ratio": 0.6,
+          "max_silence_ratio_for_ready": 0.4,
+          "hysteresis_ok_windows": 2,
+          "hysteresis_bad_windows": 1,
+          "split_quality_from_presence": true
+        }
+      },
+      "avg_keyword_recall": 0.5,
+      "avg_ready_ratio": 0.41879494173072157,
+      "avg_composite_score": 99.24575285760287,
+      "avg_token_f1_vs_legacy": 1.0,
+      "any_stub": false,
+      "score_key": [
+        1,
+        0.5,
+        0.41879494173072157,
+        99.24575285760287,
+        1.0
+      ]
+    },
+    {
+      "hyp_id": "H1",
+      "label": "default_today",
+      "mix": {
+        "agc": true,
+        "rnnoise": true,
+        "silero": true,
+        "focus_primary": false,
+        "gate": {
+          "stt_ready_threshold": 65,
+          "min_snr_db": 12,
+          "max_clipping_ratio": 0.02,
+          "max_silence_ratio": 0.6,
+          "max_silence_ratio_for_ready": 0.4,
+          "hysteresis_ok_windows": 2,
+          "hysteresis_bad_windows": 1,
+          "split_quality_from_presence": true
+        }
+      },
+      "avg_keyword_recall": 0.4375,
+      "avg_ready_ratio": 0.3593024216877428,
+      "avg_composite_score": 99.52357887773225,
+      "avg_token_f1_vs_legacy": 0.9283808704981784,
+      "any_stub": false,
+      "score_key": [
+        0,
+        0.4375,
+        0.3593024216877428,
+        99.52357887773225,
+        0.9283808704981784
+      ]
+    },
+    {
+      "hyp_id": "H4",
+      "label": "denoise_only",
+      "mix": {
+        "agc": true,
+        "rnnoise": true,
+        "silero": false,
+        "focus_primary": false,
+        "gate": {
+          "stt_ready_threshold": 65,
+          "min_snr_db": 12,
+          "max_clipping_ratio": 0.02,
+          "max_silence_ratio": 0.6,
+          "max_silence_ratio_for_ready": 0.4,
+          "hysteresis_ok_windows": 2,
+          "hysteresis_bad_windows": 1,
+          "split_quality_from_presence": true
+        }
+      },
+      "avg_keyword_recall": 0.4375,
+      "avg_ready_ratio": 0.3593024216877428,
+      "avg_composite_score": 99.52357887773225,
+      "avg_token_f1_vs_legacy": 0.9283808704981784,
+      "any_stub": false,
+      "score_key": [
+        0,
+        0.4375,
+        0.3593024216877428,
+        99.52357887773225,
+        0.9283808704981784
+      ]
+    }
+  ],
+  "winner": {
+    "hyp_id": "H5",
+    "label": "soft_gate",
+    "mix": {
+      "agc": true,
+      "rnnoise": false,
+      "silero": true,
+      "focus_primary": false,
+      "gate": {
+        "stt_ready_threshold": 55,
+        "min_snr_db": 12,
+        "max_clipping_ratio": 0.02,
+        "max_silence_ratio": 0.6,
+        "max_silence_ratio_for_ready": 0.55,
+        "hysteresis_ok_windows": 2,
+        "hysteresis_bad_windows": 1,
+        "split_quality_from_presence": true
+      }
+    },
+    "avg_keyword_recall": 0.5,
+    "avg_ready_ratio": 0.4824613604430118,
+    "avg_composite_score": 99.24575285760287,
+    "avg_token_f1_vs_legacy": 1.0,
+    "any_stub": false,
+    "score_key": [
+      1,
+      0.5,
+      0.4824613604430118,
+      99.24575285760287,
+      1.0
+    ]
+  }
+}

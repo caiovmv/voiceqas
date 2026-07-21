@@ -12,3 +12,6 @@ voiceqas_tests
 models/
 tester-web/node_modules/
 tester-web/dist/
+tester-web/coverage/
+data/observability/
+.cursor/

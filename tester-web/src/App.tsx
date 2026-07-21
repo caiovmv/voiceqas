@@ -1,217 +1,69 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AudioPreviewPanel } from './components/AudioPreviewPanel';
-import { CodecConfigPanel } from './components/CodecConfig';
-import { RecorderPanel } from './components/RecorderPanel';
-import { ResultsPanel } from './components/ResultsPanel';
-import { useRecorder } from './hooks/useRecorder';
-import {
-  analyzeGrpcBatch,
-  analyzeGrpcStream,
-  analyzeRestBatch,
-  analyzeWebSocket,
-  checkReady,
-  grpcReady,
-  transcribeGrpcBatch,
-  transcribeRestBatch,
-  transcribeRestWav,
-  transcribeWebSocket,
-} from './lib/api';
-import { encodeForTransport } from './lib/audio';
-import type { BatchResult, CodecConfig, SttResult, Transport, WindowMetrics } from './lib/types';
-import { DEFAULT_CODEC } from './lib/types';
+import { useEffect, useState } from 'react';
+import { AnalysisLabApp } from './components/analysis/AnalysisLabApp';
+import { CommandCenterApp } from './CommandCenterApp';
+import { TesterApp } from './TesterApp';
+
+import { isCommandCenterHash } from './lib/domain/cc-routes';
+
+type AppMode = 'tester' | 'command-center' | 'analysis';
+
+function modeFromHash(): AppMode {
+  if (isCommandCenterHash(location.hash)) return 'command-center';
+  if (location.hash === '#analysis') return 'analysis';
+  return 'tester';
+}
+
+function hashFor(mode: AppMode): string {
+  if (mode === 'command-center') return '#command-center';
+  if (mode === 'analysis') return '#analysis';
+  return '#tester';
+}
 
 export default function App() {
-  const [config, setConfig] = useState<CodecConfig>(DEFAULT_CODEC);
-  const [transport, setTransport] = useState<Transport>('rest');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState('');
-  const [batch, setBatch] = useState<BatchResult | null>(null);
-  const [sttResult, setSttResult] = useState<SttResult | null>(null);
-  const [streamReports, setStreamReports] = useState<WindowMetrics[]>([]);
-  const [serviceReady, setServiceReady] = useState<string | null>(null);
-
-  const { state, pcm, pcmRate, start, stop, loadFile } = useRecorder();
-
-  const patchConfig = useCallback((patch: Partial<CodecConfig>) => {
-    setConfig((c) => ({ ...c, ...patch }));
-  }, []);
+  const [mode, setMode] = useState<AppMode>(modeFromHash);
 
   useEffect(() => {
-    checkReady()
-      .then((r) => setServiceReady(JSON.stringify(r, null, 2)))
-      .catch((e) => setServiceReady(`offline: ${e.message}`));
+    const onHash = () => setMode(modeFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  const transcribeWavFile = useCallback(
-    async (file: File) => {
-      setLoading(true);
-      setError(null);
-      setSttResult(null);
-      setStatus('');
-      try {
-        setStatus(`Enviando WAV para STT (${config.sttModel})…`);
-        const result = await transcribeRestWav(file, config.sttModel);
-        setSttResult(result);
-        setStatus('STT WAV concluído');
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [config.sttModel],
-  );
+  const go = (next: AppMode) => {
+    location.hash = hashFor(next);
+    setMode(next);
+  };
 
-  const analyze = useCallback(async () => {
-    if (!pcm || pcm.length === 0) {
-      setError('Grave ou carregue um áudio primeiro');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setBatch(null);
-    setStreamReports([]);
-    setStatus('');
-
-    try {
-      const encoded = await encodeForTransport(pcm, pcmRate, config);
-
-      if (transport === 'rest') {
-        setStatus('Enviando batch REST…');
-        const result = await analyzeRestBatch(encoded, config);
-        setBatch(result);
-        setStatus('REST batch concluído');
-      } else if (transport === 'grpc') {
-        setStatus('Enviando gRPC playground (stream SSE)…');
-        await analyzeGrpcStream(encoded, config, (r) => {
-          setStreamReports((prev) => [...prev, r]);
-        });
-        setStatus('gRPC stream concluído');
-        const batchResult = await analyzeGrpcBatch(encoded, config);
-        setBatch(batchResult);
-      } else {
-        setStatus('Conectando WebSocket…');
-        const ws = analyzeWebSocket(
-          encoded,
-          config,
-          (r) => setStreamReports((prev) => [...prev, r]),
-          setStatus,
-          config.simulatePacketLossPct,
-        );
-        await new Promise((r) => setTimeout(r, 300));
-        setStatus('Enviando frames…');
-        await ws.send();
-        ws.close();
-        setStatus('WebSocket concluído');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [pcm, pcmRate, config, transport]);
-
-  const transcribe = useCallback(async () => {
-    if (!pcm || pcm.length === 0) {
-      setError('Grave ou carregue um áudio primeiro');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setSttResult(null);
-    setStatus('');
-
-    try {
-      const encoded = await encodeForTransport(pcm, pcmRate, config);
-
-      if (transport === 'rest') {
-        setStatus('Enviando STT REST…');
-        const result = await transcribeRestBatch(encoded, config);
-        setSttResult(result);
-        setStatus('STT REST concluído');
-      } else if (transport === 'grpc') {
-        setStatus('Enviando STT gRPC playground…');
-        const result = await transcribeGrpcBatch(encoded, config);
-        setSttResult(result);
-        setStatus('STT gRPC concluído');
-      } else {
-        setStatus('Conectando STT WebSocket…');
-        const ws = transcribeWebSocket(encoded, config, setStatus);
-        await new Promise((r) => setTimeout(r, 300));
-        const result = await ws.send();
-        setSttResult(result);
-        setStatus('STT WebSocket concluído');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [pcm, pcmRate, config, transport]);
-
-  const onGrpcReady = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await grpcReady();
-      setStatus(JSON.stringify(r, null, 2));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const wide = mode === 'command-center' || mode === 'analysis';
 
   return (
-    <div className="layout">
-      <header>
-        <h1>voiceqas tester</h1>
-        <p>
-          Grave áudio no navegador, simule codecs SIP e teste STT via REST / WebSocket / gRPC —{' '}
-          <a href="/docs/swagger" target="_blank" rel="noreferrer">
-            Swagger
-          </a>
-        </p>
-      </header>
+    <div className={wide ? 'layout layout-wide' : 'layout'}>
+      <nav className="app-nav">
+        <button
+          type="button"
+          className={`tab ${mode === 'tester' ? 'active' : ''}`}
+          onClick={() => go('tester')}
+        >
+          Tester
+        </button>
+        <button
+          type="button"
+          className={`tab ${mode === 'analysis' ? 'active' : ''}`}
+          onClick={() => go('analysis')}
+        >
+          Análise
+        </button>
+        <button
+          type="button"
+          className={`tab ${mode === 'command-center' ? 'active' : ''}`}
+          onClick={() => go('command-center')}
+        >
+          Command Center
+        </button>
+      </nav>
 
-      <RecorderPanel
-        isRecording={state.isRecording}
-        durationSec={state.durationSec}
-        error={state.error}
-        hasAudio={!!pcm?.length}
-        sampleCount={pcm?.length ?? 0}
-        sourceRate={pcmRate}
-        onStart={start}
-        onStop={stop}
-        onFile={loadFile}
-        onWavStt={transcribeWavFile}
-      />
-
-      <AudioPreviewPanel pcm={pcm} pcmRate={pcmRate} config={config} />
-
-      <CodecConfigPanel config={config} onChange={patchConfig} />
-
-      <ResultsPanel
-        transport={transport}
-        onTransport={setTransport}
-        loading={loading}
-        error={error}
-        status={status}
-        batch={batch}
-        streamReports={streamReports}
-        sttResult={sttResult}
-        onAnalyze={analyze}
-        onTranscribe={transcribe}
-        onGrpcReady={onGrpcReady}
-      />
-
-      {serviceReady && (
-        <section className="panel">
-          <h2>voiceqas /ready</h2>
-          <pre className="log">{serviceReady}</pre>
-        </section>
-      )}
+      {mode === 'tester' && <TesterApp />}
+      {mode === 'analysis' && <AnalysisLabApp />}
+      {mode === 'command-center' && <CommandCenterApp />}
     </div>
   );
 }

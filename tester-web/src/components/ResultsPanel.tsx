@@ -12,6 +12,7 @@ interface Props {
   onAnalyze: () => void;
   onTranscribe: () => void;
   onGrpcReady: () => void;
+  onExport?: () => void;
 }
 
 export function ResultsPanel({
@@ -26,6 +27,7 @@ export function ResultsPanel({
   onAnalyze,
   onTranscribe,
   onGrpcReady,
+  onExport,
 }: Props) {
   const lastStream = streamReports[streamReports.length - 1];
 
@@ -53,6 +55,11 @@ export function ResultsPanel({
         {transport === 'grpc' && (
           <button className="btn" disabled={loading} onClick={onGrpcReady}>
             gRPC Ready
+          </button>
+        )}
+        {onExport && (
+          <button className="btn" disabled={loading} onClick={onExport}>
+            Export JSON
           </button>
         )}
       </div>
@@ -85,14 +92,53 @@ export function ResultsPanel({
       {batch && (
         <div className="score-card">
           <h3>Batch</h3>
-          <p>
-            Score: <strong>{batch.composite_score.toFixed(1)}</strong> | STT-ready:{' '}
-            <Badge ok={batch.stt_ready} />
-          </p>
+          {batch.speech_aggregated && (batch.speech_window_count ?? 0) > 0 ? (
+            <>
+              <p>
+                Score (fala):{' '}
+                <strong>{batch.speech_aggregated.composite_score.toFixed(1)}</strong> | STT-ready:{' '}
+                <Badge ok={batch.speech_aggregated.stt_ready} />
+              </p>
+              <ul className="metrics">
+                <li>SNR: {batch.speech_aggregated.snr_estimate_db.toFixed(1)} dB</li>
+                <li>Silêncio: {(batch.speech_aggregated.silence_ratio * 100).toFixed(0)}%</li>
+                <li>RMS: {batch.speech_aggregated.rms_dbfs.toFixed(1)} dBFS</li>
+                <li>Peak: {batch.speech_aggregated.peak_dbfs.toFixed(1)} dBFS</li>
+                <li>
+                  Janelas fala: {batch.speech_window_count}/{batch.windows.length}
+                </li>
+              </ul>
+              <p className="muted">
+                Média todas as janelas: {batch.composite_score.toFixed(1)} | sessão STT-ready:{' '}
+                <Badge ok={batch.stt_ready} />
+              </p>
+              <details>
+                <summary>Breakdown fala ({batch.speech_window_count} janelas)</summary>
+                <ul className="timeline">
+                  {(batch.speech_windows ?? []).map((w) => (
+                    <li key={w.window_start_ms}>
+                      {w.window_start_ms}ms — score {w.composite_score.toFixed(1)} — SNR{' '}
+                      {w.snr_estimate_db.toFixed(1)} dB — silêncio{' '}
+                      {(w.silence_ratio * 100).toFixed(0)}% — <Badge ok={w.stt_ready} />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </>
+          ) : (
+            <p>
+              Score: <strong>{batch.composite_score.toFixed(1)}</strong> | STT-ready:{' '}
+              <Badge ok={batch.stt_ready} />
+            </p>
+          )}
           <details>
-            <summary>{batch.windows.length} janelas</summary>
+            <summary>{batch.windows.length} janelas (todas)</summary>
             <pre className="log">{JSON.stringify(batch, null, 2)}</pre>
           </details>
+          <p className="muted">
+            Calibrar limiares / comparar mix:{' '}
+            <a href="#analysis">abrir Análise</a>
+          </p>
         </div>
       )}
 

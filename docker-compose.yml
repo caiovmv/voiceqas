@@ -1,9 +1,15 @@
+networks:
+  voiceqas:
+    driver: bridge
+
 services:
   voiceqas:
     build:
       context: .
       dockerfile: Dockerfile
       args:
+        # Prerequisite: ./scripts/build-base.ps1  (or docker build -f Dockerfile.base ...)
+        BASE_IMAGE: voiceqas-build-base:local
         GCC_VERSION: "15"
         CMAKE_MIN_VERSION: "3.31"
         CPP_STD: "c++26"
@@ -13,46 +19,214 @@ services:
         CPP_HTTPLIB_VERSION: "0.48.0"
         YAML_CPP_VERSION: "0.9.0"
         GTEST_VERSION: "1.17.0"
+        VOICEQAS_STT_CUDA: "1"
     image: voiceqas:local
+    container_name: voiceqas
+    # Ao recriar este servico, recrie tambem beyla (PID namespace compartilhado):
+    #   docker compose up -d --force-recreate voiceqas command-center beyla
+    #   ou: ./scripts/redeploy-voiceqas.ps1
+    gpus: all
+    networks: [voiceqas]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "50051:50051"
+      - "9080:8080"
+      - "9081:8081"
+      - "9051:50051"
+      - "10000:10000/udp"
     environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       VOICEQAS_STT_THRESHOLD: "65"
       VOICEQAS_STT_LANGUAGE: "pt"
       VOICEQAS_STT_DEFAULT_MODEL: "auto"
       VOICEQAS_STT_MODELS_DIR: "/models/stt"
       VOICEQAS_STT_THREADS: "2"
+      VOICEQAS_STT_PROVIDER: "cpu"
+      VOICEQAS_STT_VAD_MODEL: "auto"
+      VOICEQAS_STT_REQUIRE_STT_READY: "true"
+      VOICEQAS_AUDIO_ENHANCEMENT: "false"
+      # Lab envia X-STT-Focus-Primary por request; default OFF evita stub STT no media path.
+      VOICEQAS_DIARIZATION_FOCUS_PRIMARY: "false"
+      VOICEQAS_MEDIA_RTP_ADDR: "0.0.0.0:10000"
+      VOICEQAS_MEDIA_PREFERRED_INGRESS_CODEC: "rtp_g722"
+      VOICEQAS_OPS_READ_TOKEN: "dev-read"
+      VOICEQAS_OPS_WRITE_TOKEN: "dev-write"
+      VOICEQAS_OPS_TOKEN: "dev-admin"
+      VOICEQAS_OPS_STORAGE_PATH: "/data/ops/voiceqas-ops.jsonl"
+      VOICEQAS_CHANNELS_CONFIG_PATH: "/data/config/channels.yaml"
+      VOICEQAS_TRACING_ENABLED: "true"
+      VOICEQAS_OTLP_ENDPOINT: "http://alloy:4317"
+      VOICEQAS_EXTERNAL_AI_ENABLED: "false"
+      VOICEQAS_EXTERNAL_AI_BASE_URL: "http://host.docker.internal:11434"
+      VOICEQAS_EXTERNAL_AI_MODEL: "gemma4:e4b"
     volumes:
       - stt-models:/models/stt:ro
+      - ./data/observability/ops:/data/ops
+      - ./data/config:/data/config
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /tmp
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
           cpus: "4"
-          memory: 6G
+          memory: 16G
 
-  tester-web:
+  command-center:
     build:
       context: ./tester-web
       dockerfile: Dockerfile
-    image: voiceqas-tester:local
+    image: voiceqas-command-center:local
+    container_name: voiceqas-command-center
+    networks: [voiceqas]
     ports:
       - "3000:80"
     depends_on:
-      - voiceqas
+      voiceqas:
+        condition: service_healthy
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
     restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "0.5"
           memory: 128M
+
+  beyla:
+    image: grafana/beyla:2.2.2
+    container_name: voiceqas-beyla
+    networks: [voiceqas]
+    privileged: true
+    # Must share PID ns with voiceqas. If voiceqas is recreated, recreate beyla too:
+    #   docker compose up -d --force-recreate voiceqas beyla
+    pid: "container:voiceqas"
+    cap_add:
+      - SYS_ADMIN
+      - BPF
+    volumes:
+      - ./deploy/observability/beyla/config.yml:/etc/beyla/config.yml:ro
+    environment:
+      BEYLA_CONFIG_PATH: /etc/beyla/config.yml
+      BEYLA_LOG_LEVEL: info
+    depends_on:
+      voiceqas:
+        condition: service_healthy
+      alloy:
+        condition: service_started
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8999/metrics >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+  prometheus:
+    image: prom/prometheus:v3.13.0
+    container_name: voiceqas-prometheus
+    networks: [voiceqas]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/observability/prometheus:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
+    restart: unless-stopped
+    depends_on:
+      voiceqas:
+        condition: service_healthy
+
+  loki:
+    image: grafana/loki:3.7.3
+    container_name: voiceqas-loki
+    networks: [voiceqas]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./deploy/observability/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - ./data/observability/loki:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:3.0.2
+    container_name: voiceqas-tempo
+    networks: [voiceqas]
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./deploy/observability/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - ./data/observability/tempo:/var/tempo
+    command:
+      - -target=all
+      - -config.file=/etc/tempo.yaml
+    restart: unless-stopped
+
+  grafana:
+    build:
+      context: ./deploy/observability/grafana
+      dockerfile: Dockerfile
+    image: voiceqas-grafana:local
+    container_name: voiceqas-grafana
+    networks: [voiceqas]
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+      GF_SERVER_ROOT_URL: "http://localhost:3001/"
+      GF_SECURITY_COOKIE_SAMESITE: lax
+    volumes:
+      - ./deploy/observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/observability/grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.17.1
+    container_name: voiceqas-alloy
+    networks: [voiceqas]
+    ports:
+      - "12345:12345"
+      - "4319:4317"
+      - "4320:4318"
+    volumes:
+      - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/observability/alloy:/var/lib/alloy/data
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    depends_on:
+      - loki
+      - tempo
+    restart: unless-stopped
 
 volumes:
   stt-models:

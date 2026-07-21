@@ -1,0 +1,435 @@
+{
+  "at": "2026-07-08T23:19:05.002Z",
+  "api": "http://127.0.0.1:9080",
+  "iterations": 1000,
+  "startFrom": 1,
+  "rampUp": true,
+  "maxParallel": 12,
+  "peakInflight": 12,
+  "exitCode": 0,
+  "summary": {
+    "passed": 1000,
+    "failed": 0,
+    "total": 1000,
+    "thisRun": {
+      "passed": 1000,
+      "failed": 0
+    }
+  },
+  "recentStats": [
+    {
+      "iter": 951,
+      "ok": true,
+      "detail": "links=18 rtp=7478480 vqa=5356800 asr=5183360 session=sankey-e2e-1783551830507-951 rtp_frames=100 attempt=1",
+      "elapsedMs": 5271,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:40.520Z"
+    },
+    {
+      "iter": 952,
+      "ok": true,
+      "detail": "links=18 rtp=7526824 vqa=5404800 asr=5271680 session=sankey-e2e-1783551830507-952 rtp_frames=100 attempt=1",
+      "elapsedMs": 4334,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:40.626Z"
+    },
+    {
+      "iter": 953,
+      "ok": true,
+      "detail": "links=18 rtp=7590824 vqa=5468800 asr=5207680 session=sankey-e2e-1783551830507-953 rtp_frames=100 attempt=1",
+      "elapsedMs": 4299,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:40.682Z"
+    },
+    {
+      "iter": 954,
+      "ok": true,
+      "detail": "links=18 rtp=7718824 vqa=5532800 asr=5271680 session=sankey-e2e-1783551830507-954 rtp_frames=100 attempt=1",
+      "elapsedMs": 4301,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:40.774Z"
+    },
+    {
+      "iter": 955,
+      "ok": true,
+      "detail": "links=18 rtp=7782824 vqa=5532800 asr=5271680 session=sankey-e2e-1783551830507-955 rtp_frames=100 attempt=1",
+      "elapsedMs": 4317,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:40.863Z"
+    },
+    {
+      "iter": 956,
+      "ok": true,
+      "detail": "links=18 rtp=7846824 vqa=5532800 asr=5271680 session=sankey-e2e-1783551830507-956 rtp_frames=100 attempt=1",
+      "elapsedMs": 4322,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:40.944Z"
+    },
+    {
+      "iter": 957,
+      "ok": true,
+      "detail": "links=18 rtp=7590824 vqa=5340800 asr=5271680 session=sankey-e2e-1783551830507-957 rtp_frames=100 attempt=1",
+      "elapsedMs": 4892,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:42.587Z"
+    },
+    {
+      "iter": 958,
+      "ok": true,
+      "detail": "links=18 rtp=7350824 vqa=5292800 asr=5271680 session=sankey-e2e-1783551830507-958 rtp_frames=100 attempt=1",
+      "elapsedMs": 5892,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:43.665Z"
+    },
+    {
+      "iter": 959,
+      "ok": true,
+      "detail": "links=18 rtp=7462824 vqa=5340800 asr=5271680 session=sankey-e2e-1783551830507-959 rtp_frames=100 attempt=1",
+      "elapsedMs": 4557,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:43.756Z"
+    },
+    {
+      "iter": 960,
+      "ok": true,
+      "detail": "links=18 rtp=6919512 vqa=5180800 asr=5022720 session=sankey-e2e-1783551830507-960 rtp_frames=100 attempt=1",
+      "elapsedMs": 5544,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:44.819Z"
+    },
+    {
+      "iter": 961,
+      "ok": true,
+      "detail": "links=18 rtp=6967512 vqa=5228800 asr=4958720 session=sankey-e2e-1783551830507-961 rtp_frames=100 attempt=1",
+      "elapsedMs": 5543,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:44.893Z"
+    },
+    {
+      "iter": 962,
+      "ok": true,
+      "detail": "links=18 rtp=7031512 vqa=5292800 asr=4894720 session=sankey-e2e-1783551830507-962 rtp_frames=100 attempt=1",
+      "elapsedMs": 4561,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:44.987Z"
+    },
+    {
+      "iter": 963,
+      "ok": true,
+      "detail": "links=18 rtp=7143512 vqa=5340800 asr=4894720 session=sankey-e2e-1783551830507-963 rtp_frames=100 attempt=1",
+      "elapsedMs": 4552,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:45.073Z"
+    },
+    {
+      "iter": 964,
+      "ok": true,
+      "detail": "links=18 rtp=6907480 vqa=4812800 asr=5150720 session=sankey-e2e-1783551830507-964 rtp_frames=100 attempt=1",
+      "elapsedMs": 5930,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:46.556Z"
+    },
+    {
+      "iter": 965,
+      "ok": true,
+      "detail": "links=18 rtp=6581116 vqa=4604800 asr=5086720 session=sankey-e2e-1783551830507-965 rtp_frames=100 attempt=1",
+      "elapsedMs": 6946,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:47.628Z"
+    },
+    {
+      "iter": 966,
+      "ok": true,
+      "detail": "links=18 rtp=6629116 vqa=4652800 asr=5022720 session=sankey-e2e-1783551830507-966 rtp_frames=100 attempt=1",
+      "elapsedMs": 6942,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:47.716Z"
+    },
+    {
+      "iter": 967,
+      "ok": true,
+      "detail": "links=18 rtp=6677116 vqa=4700800 asr=4958720 session=sankey-e2e-1783551830507-967 rtp_frames=100 attempt=1",
+      "elapsedMs": 6944,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:47.807Z"
+    },
+    {
+      "iter": 968,
+      "ok": true,
+      "detail": "links=18 rtp=6725116 vqa=4748800 asr=4894720 session=sankey-e2e-1783551830507-968 rtp_frames=100 attempt=1",
+      "elapsedMs": 6956,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:47.900Z"
+    },
+    {
+      "iter": 969,
+      "ok": true,
+      "detail": "links=18 rtp=6853116 vqa=4812800 asr=4958720 session=sankey-e2e-1783551830507-969 rtp_frames=100 attempt=1",
+      "elapsedMs": 6345,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:48.932Z"
+    },
+    {
+      "iter": 970,
+      "ok": true,
+      "detail": "links=18 rtp=6917116 vqa=4812800 asr=4958720 session=sankey-e2e-1783551830507-970 rtp_frames=100 attempt=1",
+      "elapsedMs": 5361,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:49.026Z"
+    },
+    {
+      "iter": 971,
+      "ok": true,
+      "detail": "links=18 rtp=6981288 vqa=4812800 asr=5086080 session=sankey-e2e-1783551830507-971 rtp_frames=100 attempt=1",
+      "elapsedMs": 6299,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:50.055Z"
+    },
+    {
+      "iter": 972,
+      "ok": true,
+      "detail": "links=18 rtp=6053288 vqa=4396800 asr=5214080 session=sankey-e2e-1783551830507-972 rtp_frames=100 attempt=1",
+      "elapsedMs": 7436,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.255Z"
+    },
+    {
+      "iter": 973,
+      "ok": true,
+      "detail": "links=18 rtp=6181288 vqa=4460800 asr=5214080 session=sankey-e2e-1783551830507-973 rtp_frames=100 attempt=1",
+      "elapsedMs": 7441,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.334Z"
+    },
+    {
+      "iter": 974,
+      "ok": true,
+      "detail": "links=18 rtp=6245288 vqa=4460800 asr=5214080 session=sankey-e2e-1783551830507-974 rtp_frames=100 attempt=1",
+      "elapsedMs": 7420,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.407Z"
+    },
+    {
+      "iter": 975,
+      "ok": true,
+      "detail": "links=18 rtp=6309288 vqa=4460800 asr=5214080 session=sankey-e2e-1783551830507-975 rtp_frames=100 attempt=1",
+      "elapsedMs": 7411,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.484Z"
+    },
+    {
+      "iter": 976,
+      "ok": true,
+      "detail": "links=18 rtp=6309288 vqa=4460800 asr=5150080 session=sankey-e2e-1783551830507-976 rtp_frames=100 attempt=1",
+      "elapsedMs": 6017,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.573Z"
+    },
+    {
+      "iter": 977,
+      "ok": true,
+      "detail": "links=18 rtp=6357288 vqa=4508800 asr=5086080 session=sankey-e2e-1783551830507-977 rtp_frames=100 attempt=1",
+      "elapsedMs": 5021,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.649Z"
+    },
+    {
+      "iter": 978,
+      "ok": true,
+      "detail": "links=18 rtp=6469288 vqa=4556800 asr=5086080 session=sankey-e2e-1783551830507-978 rtp_frames=100 attempt=1",
+      "elapsedMs": 5006,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.722Z"
+    },
+    {
+      "iter": 979,
+      "ok": true,
+      "detail": "links=18 rtp=6533288 vqa=4620800 asr=5022080 session=sankey-e2e-1783551830507-979 rtp_frames=100 attempt=1",
+      "elapsedMs": 4990,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.797Z"
+    },
+    {
+      "iter": 980,
+      "ok": true,
+      "detail": "links=18 rtp=6645288 vqa=4668800 asr=5022080 session=sankey-e2e-1783551830507-980 rtp_frames=100 attempt=1",
+      "elapsedMs": 4995,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:52.895Z"
+    },
+    {
+      "iter": 981,
+      "ok": true,
+      "detail": "links=18 rtp=6613632 vqa=4700800 asr=5047040 session=sankey-e2e-1783551830507-981 rtp_frames=100 attempt=1",
+      "elapsedMs": 4991,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:53.923Z"
+    },
+    {
+      "iter": 982,
+      "ok": true,
+      "detail": "links=18 rtp=6741632 vqa=4764800 asr=5047040 session=sankey-e2e-1783551830507-982 rtp_frames=100 attempt=1",
+      "elapsedMs": 5070,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:54.096Z"
+    },
+    {
+      "iter": 983,
+      "ok": true,
+      "detail": "links=18 rtp=6085632 vqa=4364800 asr=4983040 session=sankey-e2e-1783551830507-983 rtp_frames=100 attempt=1",
+      "elapsedMs": 6220,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:56.275Z"
+    },
+    {
+      "iter": 984,
+      "ok": true,
+      "detail": "links=18 rtp=5893632 vqa=4300800 asr=4919040 session=sankey-e2e-1783551830507-984 rtp_frames=100 attempt=1",
+      "elapsedMs": 4961,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:57.216Z"
+    },
+    {
+      "iter": 985,
+      "ok": true,
+      "detail": "links=18 rtp=5941632 vqa=4348800 asr=4855040 session=sankey-e2e-1783551830507-985 rtp_frames=100 attempt=1",
+      "elapsedMs": 4954,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:57.288Z"
+    },
+    {
+      "iter": 986,
+      "ok": true,
+      "detail": "links=18 rtp=6053632 vqa=4396800 asr=4855040 session=sankey-e2e-1783551830507-986 rtp_frames=100 attempt=1",
+      "elapsedMs": 4954,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:57.361Z"
+    },
+    {
+      "iter": 987,
+      "ok": true,
+      "detail": "links=18 rtp=5797632 vqa=4268800 asr=4855040 session=sankey-e2e-1783551830507-987 rtp_frames=100 attempt=1",
+      "elapsedMs": 5845,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:58.329Z"
+    },
+    {
+      "iter": 988,
+      "ok": true,
+      "detail": "links=18 rtp=5925632 vqa=4332800 asr=4855040 session=sankey-e2e-1783551830507-988 rtp_frames=100 attempt=1",
+      "elapsedMs": 5832,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:58.405Z"
+    },
+    {
+      "iter": 989,
+      "ok": true,
+      "detail": "links=18 rtp=5695964 vqa=3564800 asr=4521600 session=sankey-e2e-1783551830507-989 rtp_frames=100 attempt=1",
+      "elapsedMs": 6758,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:59.407Z"
+    },
+    {
+      "iter": 990,
+      "ok": true,
+      "detail": "links=18 rtp=5695964 vqa=3564800 asr=4521600 session=sankey-e2e-1783551830507-990 rtp_frames=100 attempt=1",
+      "elapsedMs": 6761,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:59.483Z"
+    },
+    {
+      "iter": 991,
+      "ok": true,
+      "detail": "links=18 rtp=5695964 vqa=3564800 asr=4521600 session=sankey-e2e-1783551830507-991 rtp_frames=100 attempt=1",
+      "elapsedMs": 6761,
+      "inflight": 12,
+      "at": "2026-07-08T23:18:59.558Z"
+    },
+    {
+      "iter": 992,
+      "ok": true,
+      "detail": "links=18 rtp=5504652 vqa=3421440 asr=4657280 session=sankey-e2e-1783551830507-992 rtp_frames=100 attempt=1",
+      "elapsedMs": 7609,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:00.504Z"
+    },
+    {
+      "iter": 993,
+      "ok": true,
+      "detail": "links=18 rtp=5072652 vqa=3373440 asr=4721280 session=sankey-e2e-1783551830507-993 rtp_frames=100 attempt=1",
+      "elapsedMs": 8796,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:02.719Z"
+    },
+    {
+      "iter": 994,
+      "ok": true,
+      "detail": "links=18 rtp=5072652 vqa=3373440 asr=4721280 session=sankey-e2e-1783551830507-994 rtp_frames=100 attempt=1",
+      "elapsedMs": 8697,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:02.793Z"
+    },
+    {
+      "iter": 995,
+      "ok": true,
+      "detail": "links=18 rtp=5072652 vqa=3373440 asr=4721280 session=sankey-e2e-1783551830507-995 rtp_frames=100 attempt=1",
+      "elapsedMs": 6574,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:02.849Z"
+    },
+    {
+      "iter": 996,
+      "ok": true,
+      "detail": "links=18 rtp=5072652 vqa=3373440 asr=4721280 session=sankey-e2e-1783551830507-996 rtp_frames=100 attempt=1",
+      "elapsedMs": 5708,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:02.924Z"
+    },
+    {
+      "iter": 997,
+      "ok": true,
+      "detail": "links=18 rtp=5072652 vqa=3373440 asr=4721280 session=sankey-e2e-1783551830507-997 rtp_frames=100 attempt=1",
+      "elapsedMs": 5731,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:03.019Z"
+    },
+    {
+      "iter": 998,
+      "ok": true,
+      "detail": "links=18 rtp=4880652 vqa=3245440 asr=4721280 session=sankey-e2e-1783551830507-998 rtp_frames=100 attempt=1",
+      "elapsedMs": 6621,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:03.982Z"
+    },
+    {
+      "iter": 999,
+      "ok": true,
+      "detail": "links=18 rtp=4880652 vqa=3245440 asr=4721280 session=sankey-e2e-1783551830507-999 rtp_frames=100 attempt=1",
+      "elapsedMs": 5722,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:04.051Z"
+    },
+    {
+      "iter": 1000,
+      "ok": true,
+      "detail": "links=18 rtp=4876696 vqa=3245440 asr=4849280 session=sankey-e2e-1783551830507-1000 rtp_frames=100 attempt=1",
+      "elapsedMs": 6595,
+      "inflight": 12,
+      "at": "2026-07-08T23:19:05.000Z"
+    }
+  ],
+  "results": [
+    {
+      "status": "PASS",
+      "name": "Health",
+      "detail": "voiceqas ok",
+      "at": "2026-07-08T23:03:50.531Z"
+    },
+    {
+      "status": "PASS",
+      "name": "Run complete",
+      "detail": "1000/1000 PASS in 914.5s avg=0.91s/iter peakInflight=12",
+      "at": "2026-07-08T23:19:05.002Z"
+    }
+  ]
+}

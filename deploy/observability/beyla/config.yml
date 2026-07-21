@@ -1,0 +1,27 @@
+# Beyla eBPF auto-instrumentation for voiceqas (REST :8080, WS :8081, gRPC :50051).
+# Requires pid namespace shared with voiceqas + privileged/BPF caps.
+
+discovery:
+  services:
+    - open_ports: 8080,8081,50051
+      name: voiceqas
+      namespace: voiceqas
+
+routes:
+  unmatched: heuristic
+
+otel_traces_export:
+  endpoint: http://alloy:4317
+  protocol: grpc
+
+# RED metrics via Prometheus scrape (job=beyla :8999). OTLP metrics not supported by Alloy→Tempo path.
+prometheus_export:
+  port: 8999
+  path: /metrics
+  instrumentations:
+    - http
+    - grpc
+
+attributes:
+  kubernetes:
+    enable: false

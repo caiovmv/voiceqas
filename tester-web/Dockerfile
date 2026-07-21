@@ -8,7 +8,8 @@ RUN npm install
 
 COPY . .
 ENV VITE_API_BASE=/api \
-    VITE_WS_BASE=
+    VITE_WS_BASE= \
+    VITE_DEFAULT_OPS_TOKEN=dev-write
 RUN npm run build
 
 FROM nginx:1.27-alpine AS runtime

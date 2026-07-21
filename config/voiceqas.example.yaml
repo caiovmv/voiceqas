@@ -2,22 +2,128 @@ server:
   rest_addr: "0.0.0.0:8080"
   grpc_addr: "0.0.0.0:50051"
   ws_addr: "0.0.0.0:8081"
+  media_rtp_addr: "0.0.0.0:10000"
   web_root: "/app/web"
   openapi_path: "/app/openapi/voiceqas.yaml"
+  channels_config_path: "/data/config/channels.yaml"
 analyzer:
   frame_ms: 20
   window_ms: 500
   stt_ready_threshold: 65
   min_snr_db: 12
   max_clipping_ratio: 0.02
+  # Speech window classifier (speech_aggregated).
   max_silence_ratio: 0.60
+  # Presence gate for stt_ready (stricter). Env: VOICEQAS_ANALYZER_MAX_SILENCE_READY
+  max_silence_ratio_for_ready: 0.40
+  hysteresis_ok_windows: 2
+  hysteresis_bad_windows: 1
+  speech_energy_threshold_dbfs: -40
+audio:
+  # Legado (espelha strip.agc / strip.nr / strip.limiter). Env: VOICEQAS_AUDIO_NORMALIZE=0
+  normalize_enabled: true
+  agc_target_rms_dbfs: -18
+  agc_max_gain_db: 24
+  agc_attack_ms: 5
+  agc_release_ms: 100
+  limiter_ceiling_dbfs: -1
+  # Env: VOICEQAS_AUDIO_ENHANCEMENT=0
+  # Calibrated S15 (Whisper match-before): NR/DeEss off; mild EQ; soft comp.
+  enhancement:
+    enabled: false
+    backend: rnnoise
+    wet_dry: 1.0
+  # Ordem fixa: NR → HPF → EQ → De-esser → Comp → Limiter → AGC
+  strip:
+    nr: { enabled: false, wet_dry: 1.0 }
+    hpf: { enabled: true, cutoff_hz: 80 }
+    eq:
+      enabled: true
+      bands:
+        - { freq_hz: 250, gain_db: -1.5, q: 1.0 }
+        - { freq_hz: 450, gain_db: -1.0, q: 1.2 }
+        - { freq_hz: 2500, gain_db: 1.0, q: 0.8 }
+        - { freq_hz: 3500, gain_db: 1.0, q: 0.8 }
+    deesser:
+      enabled: false
+      center_hz: 6500
+      bandwidth_hz: 2000
+      threshold_db: -25
+      ratio: 3
+      attack_ms: 1
+      release_ms: 40
+    compressor:
+      enabled: true
+      threshold_db: -20
+      ratio: 2
+      attack_ms: 5
+      release_ms: 80
+      makeup_db: 0
+    limiter: { enabled: true, ceiling_dbfs: -1 }
+    agc:
+      enabled: true
+      target_rms_dbfs: -18
+      max_gain_db: 24
+      attack_ms: 5
+      release_ms: 100
+media:
+  enabled: true
+  rtp_addr: "0.0.0.0:10000"
+  preferred_ingress_codec: "rtp_g722"
+  ingress_autodetect: true
 stt:
   enabled: true
   language: "pt"
   target_sample_rate: 16000
   default_model: "auto"
+  provider: cpu
   num_threads: 2
+  # true  = STT só bufferiza áudio quando VQA diz stt_ready (histerese 2 janelas ok).
+  # false = STT aceita tudo; stt_ready só reporta/alerta.
+  # Env: VOICEQAS_STT_REQUIRE_STT_READY=0 para desligar.
+  require_stt_ready: true
   models_dir: "/models/stt"
   parakeet_dir: "/models/stt/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
   whisper_dir: "/models/stt/sherpa-onnx-whisper-turbo"
   whisper_callcenter_dir: ""
+  vad:
+    enabled: true
+    # Extrai só trechos de fala antes do ASR. Mesma regra no media relay e no batch:
+    # só aplica se enabled=true E apply_before_stt=true.
+    # Env: VOICEQAS_STT_VAD_APPLY_BEFORE_STT=1
+    apply_before_stt: false
+    model: auto
+    # model: k2fsa | k2fsa-int8 | v4 | v5
+    # model_path: "/models/stt/silero_vad.int8.onnx"
+    threshold: 0.45
+    min_speech_ms: 150
+    min_silence_ms: 300
+    num_threads: 1
+  # Turn-taking mono + interlocutor principal (Silero timestamps).
+  # Env: VOICEQAS_DIARIZATION_FOCUS_PRIMARY=0 para desligar filtro.
+  diarization:
+    enabled: true
+    focus_primary: false
+    primary_mode: first_then_max_presence
+    min_turn_ms: 300
+ops:
+  persistence_enabled: true
+  storage_path: "/tmp/voiceqas-ops.jsonl"
+  webhook_url: ""
+  alert_score_threshold: 0.45
+  stt_not_ready_alert_ms: 30000
+  partial_stt_interval_ms: 3000
+  partial_stt_window_ms: 5000
+  partial_stt_min_buffer_ms: 3000
+# AI externa (Ollama no host) — fim do Sankey inbound / início do outbound
+external_ai:
+  enabled: false
+  provider: ollama
+  base_url: "http://host.docker.internal:11434"
+  model: "gemma4:e4b"
+  timeout_ms: 60000
+  # Após stt_final: POST /api/chat → resposta texto → (opcional TTS) → agent PCM out
+tracing:
+  enabled: true
+  otlp_endpoint: "http://alloy:4317"
+  service_name: "voiceqas"

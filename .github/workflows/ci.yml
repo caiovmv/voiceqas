@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, 'feature/**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache vcpkg and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg
+            vcpkg_installed
+            .ccache
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache zip unzip tar
+      - name: Build and test
+        run: |
+          chmod +x scripts/build.sh scripts/run-tests.sh
+          VOICEQAS_BUILD_TESTS=1 ./scripts/build.sh
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: cpp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache vcpkg and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .vcpkg
+            vcpkg_installed
+            .ccache
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache gcovr zip unzip tar
+      - name: Coverage report
+        run: |
+          chmod +x scripts/build.sh scripts/coverage.sh
+          VOICEQAS_COVERAGE_MIN_LINE=45 ./scripts/coverage.sh
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tester-web/package-lock.json
+      - name: Test and build
+        working-directory: tester-web
+        run: |
+          npm ci
+          npm run test:coverage
+          npm run build

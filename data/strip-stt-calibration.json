@@ -1,0 +1,345 @@
+{
+  "model": "whisper",
+  "provider": "cuda",
+  "api": "http://localhost:9080",
+  "wavs": [
+    "voiceqas-original (1).wav"
+  ],
+  "legacy_text": {
+    "voiceqas-original (1).wav": "Oi, bom dia, tudo bem? Meu nome é Caio, eu tenho uma latíssima red e ela está com problema na vaporização de leite, eu queria suporte."
+  },
+  "per_wav": {
+    "voiceqas-original (1).wav": {
+      "S0": {
+        "hyp_id": "S0",
+        "label": "legacy",
+        "strip": {
+          "nr": {
+            "enabled": false,
+            "wet_dry": 1.0
+          },
+          "hpf": {
+            "enabled": false,
+            "cutoff_hz": 80
+          },
+          "eq": {
+            "enabled": false,
+            "bands": [
+              {
+                "freq_hz": 250,
+                "gain_db": -3,
+                "q": 1.2
+              },
+              {
+                "freq_hz": 450,
+                "gain_db": -2,
+                "q": 1.5
+              },
+              {
+                "freq_hz": 2500,
+                "gain_db": 2,
+                "q": 0.8
+              },
+              {
+                "freq_hz": 3500,
+                "gain_db": 2,
+                "q": 0.8
+              }
+            ]
+          },
+          "deesser": {
+            "enabled": false,
+            "center_hz": 6500,
+            "bandwidth_hz": 2000,
+            "threshold_db": -25,
+            "ratio": 3,
+            "attack_ms": 1,
+            "release_ms": 40
+          },
+          "compressor": {
+            "enabled": false,
+            "threshold_db": -20,
+            "ratio": 3,
+            "attack_ms": 5,
+            "release_ms": 80,
+            "makeup_db": 2
+          },
+          "limiter": {
+            "enabled": true,
+            "ceiling_dbfs": -3
+          },
+          "agc": {
+            "enabled": true,
+            "target_rms_dbfs": -20,
+            "max_gain_db": 24,
+            "attack_ms": 5,
+            "release_ms": 100
+          }
+        },
+        "stt": {
+          "text": "Oi, bom dia, tudo bem? Meu nome é Caio, eu tenho uma latíssima red e ela está com problema na vaporização de leite, eu queria suporte.",
+          "text_head": "Oi, bom dia, tudo bem? Meu nome é Caio, eu tenho uma latíssima red e ela está com problema na vaporização de leite, eu queria suporte.",
+          "chars": 134,
+          "processing_ms": 1701,
+          "model": "whisper-large-v3-turbo-pt",
+          "keyword_recall": 1.0,
+          "token_f1_vs_legacy": 1.0,
+          "must_keep_ok": true
+        }
+      },
+      "S1": {
+        "hyp_id": "S1",
+        "label": "default_full_strip",
+        "strip": {
+          "nr": {
+            "enabled": true,
+            "wet_dry": 1.0
+          },
+          "hpf": {
+            "enabled": true,
+            "cutoff_hz": 80
+          },
+          "eq": {
+            "enabled": true,
+            "bands": [
+              {
+                "freq_hz": 250,
+                "gain_db": -3,
+                "q": 1.2
+              },
+              {
+                "freq_hz": 450,
+                "gain_db": -2,
+                "q": 1.5
+              },
+              {
+                "freq_hz": 2500,
+                "gain_db": 2,
+                "q": 0.8
+              },
+              {
+                "freq_hz": 3500,
+                "gain_db": 2,
+                "q": 0.8
+              }
+            ]
+          },
+          "deesser": {
+            "enabled": true,
+            "center_hz": 6500,
+            "bandwidth_hz": 2000,
+            "threshold_db": -25,
+            "ratio": 3,
+            "attack_ms": 1,
+            "release_ms": 40
+          },
+          "compressor": {
+            "enabled": true,
+            "threshold_db": -20,
+            "ratio": 3,
+            "attack_ms": 5,
+            "release_ms": 80,
+            "makeup_db": 2
+          },
+          "limiter": {
+            "enabled": true,
+            "ceiling_dbfs": -1
+          },
+          "agc": {
+            "enabled": true,
+            "target_rms_dbfs": -18,
+            "max_gain_db": 24,
+            "attack_ms": 5,
+            "release_ms": 100
+          }
+        },
+        "stt": {
+          "text": "Oi, bom dia, tudo bem? Meu nome é Carlos, eu tenho uma latícia na Red e ela está com problema na vaporização de leite. Eu tenho suporte.",
+          "text_head": "Oi, bom dia, tudo bem? Meu nome é Carlos, eu tenho uma latícia na Red e ela está com problema na vaporização de leite. Eu tenho suporte.",
+          "chars": 136,
+          "processing_ms": 1630,
+          "model": "whisper-large-v3-turbo-pt",
+          "keyword_recall": 0.7142857142857143,
+          "token_f1_vs_legacy": 0.830188679245283,
+          "must_keep_ok": false
+        }
+      },
+      "S15": {
+        "hyp_id": "S15",
+        "label": "nr_off_no_deess_mild",
+        "strip": {
+          "nr": {
+            "enabled": false,
+            "wet_dry": 1.0
+          },
+          "hpf": {
+            "enabled": true,
+            "cutoff_hz": 80
+          },
+          "eq": {
+            "enabled": true,
+            "bands": [
+              {
+                "freq_hz": 250,
+                "gain_db": -1.5,
+                "q": 1.0
+              },
+              {
+                "freq_hz": 450,
+                "gain_db": -1.0,
+                "q": 1.2
+              },
+              {
+                "freq_hz": 2500,
+                "gain_db": 1.0,
+                "q": 0.8
+              },
+              {
+                "freq_hz": 3500,
+                "gain_db": 1.0,
+                "q": 0.8
+              }
+            ]
+          },
+          "deesser": {
+            "enabled": false,
+            "center_hz": 6500,
+            "bandwidth_hz": 2000,
+            "threshold_db": -25,
+            "ratio": 3,
+            "attack_ms": 1,
+            "release_ms": 40
+          },
+          "compressor": {
+            "enabled": true,
+            "threshold_db": -20,
+            "ratio": 2,
+            "attack_ms": 5,
+            "release_ms": 80,
+            "makeup_db": 0
+          },
+          "limiter": {
+            "enabled": true,
+            "ceiling_dbfs": -1
+          },
+          "agc": {
+            "enabled": true,
+            "target_rms_dbfs": -18,
+            "max_gain_db": 24,
+            "attack_ms": 5,
+            "release_ms": 100
+          }
+        },
+        "stt": {
+          "text": "Oi, bom dia, tudo bem? Meu nome é Caio, eu tenho uma latíssima red e ela está com problema na vaporização de leite, eu queria suporte.",
+          "text_head": "Oi, bom dia, tudo bem? Meu nome é Caio, eu tenho uma latíssima red e ela está com problema na vaporização de leite, eu queria suporte.",
+          "chars": 134,
+          "processing_ms": 1673,
+          "model": "whisper-large-v3-turbo-pt",
+          "keyword_recall": 1.0,
+          "token_f1_vs_legacy": 1.0,
+          "must_keep_ok": true
+        }
+      }
+    }
+  },
+  "ranking": [
+    {
+      "hyp_id": "S15",
+      "short_must_keep": true,
+      "short_f1": 1.0,
+      "short_kr": 1.0,
+      "avg_must_keep": 1.0,
+      "avg_f1": 1.0,
+      "avg_kr": 1.0,
+      "label": "nr_off_no_deess_mild"
+    },
+    {
+      "hyp_id": "S0",
+      "short_must_keep": true,
+      "short_f1": 1.0,
+      "short_kr": 1.0,
+      "avg_must_keep": 1.0,
+      "avg_f1": 1.0,
+      "avg_kr": 1.0,
+      "label": "legacy"
+    },
+    {
+      "hyp_id": "S1",
+      "short_must_keep": false,
+      "short_f1": 0.830188679245283,
+      "short_kr": 0.7142857142857143,
+      "avg_must_keep": 0.0,
+      "avg_f1": 0.830188679245283,
+      "avg_kr": 0.7142857142857143,
+      "label": "default_full_strip"
+    }
+  ],
+  "winner": {
+    "hyp_id": "S15",
+    "strip": {
+      "nr": {
+        "enabled": false,
+        "wet_dry": 1.0
+      },
+      "hpf": {
+        "enabled": true,
+        "cutoff_hz": 80
+      },
+      "eq": {
+        "enabled": true,
+        "bands": [
+          {
+            "freq_hz": 250,
+            "gain_db": -1.5,
+            "q": 1.0
+          },
+          {
+            "freq_hz": 450,
+            "gain_db": -1.0,
+            "q": 1.2
+          },
+          {
+            "freq_hz": 2500,
+            "gain_db": 1.0,
+            "q": 0.8
+          },
+          {
+            "freq_hz": 3500,
+            "gain_db": 1.0,
+            "q": 0.8
+          }
+        ]
+      },
+      "deesser": {
+        "enabled": false,
+        "center_hz": 6500,
+        "bandwidth_hz": 2000,
+        "threshold_db": -25,
+        "ratio": 3,
+        "attack_ms": 1,
+        "release_ms": 40
+      },
+      "compressor": {
+        "enabled": true,
+        "threshold_db": -20,
+        "ratio": 2,
+        "attack_ms": 5,
+        "release_ms": 80,
+        "makeup_db": 0
+      },
+      "limiter": {
+        "enabled": true,
+        "ceiling_dbfs": -1
+      },
+      "agc": {
+        "enabled": true,
+        "target_rms_dbfs": -18,
+        "max_gain_db": 24,
+        "attack_ms": 5,
+        "release_ms": 100
+      }
+    }
+  },
+  "goal": "match-before: STT after ~ LEGACY before; apply yaml+lab"
+}

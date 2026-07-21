@@ -39,17 +39,34 @@ if command -v ccache >/dev/null 2>&1; then
   )
 fi
 
-if [[ "${VOICEQAS_BUILD_TESTS:-0}" == "1" ]]; then
+if [[ "${VOICEQAS_BUILD_TESTS:-1}" == "1" ]]; then
   CMAKE_ARGS+=(-DVOICEQAS_BUILD_TESTS=ON -DVCPKG_MANIFEST_FEATURES=test)
 else
   CMAKE_ARGS+=(-DVOICEQAS_BUILD_TESTS=OFF)
 fi
 
+if [[ "${VOICEQAS_COVERAGE:-0}" == "1" ]]; then
+  CMAKE_ARGS+=(-DVOICEQAS_COVERAGE=ON -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Debug}")
+fi
+
+if [[ "${VOICEQAS_PERF_BADASS:-0}" == "1" || "${VOICEQAS_PERF_BADASS:-}" == "ON" ]]; then
+  CMAKE_ARGS+=(-DVOICEQAS_PERF_BADASS=ON)
+fi
+
 echo ">> Instalando deps vcpkg (manifest)..."
-"$VCPKG_ROOT/vcpkg" install \
-  --triplet x64-linux \
-  --x-manifest-root="$ROOT" \
+VCPKG_INSTALL_ARGS=(
+  --triplet x64-linux
+  --x-manifest-root="$ROOT"
   --x-install-root="$ROOT/vcpkg_installed"
+)
+if [[ "${VOICEQAS_BUILD_TESTS:-1}" == "1" ]]; then
+  VCPKG_INSTALL_ARGS+=(--x-feature=test)
+fi
+"$VCPKG_ROOT/vcpkg" install "${VCPKG_INSTALL_ARGS[@]}"
 
 cmake -B build -G Ninja "${CMAKE_ARGS[@]}" "$@"
 cmake --build build -j"$(nproc)"
+
+if [[ "${VOICEQAS_BUILD_TESTS:-1}" == "1" ]]; then
+  "$ROOT/scripts/run-tests.sh"
+fi

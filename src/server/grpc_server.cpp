@@ -2,12 +2,18 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include <iostream>
+#include <cstring>
+#include <map>
 #include <memory>
 
+#include "voiceqas/media/session.hpp"
 #include "voiceqas/metrics.hpp"
+#include "voiceqas/server/grpc_mappers.hpp"
+#include "voiceqas/tracing/tracing.hpp"
 #include "voiceqas/stt/json_util.hpp"
 #include "voiceqas/stt/model_util.hpp"
+#include "media.grpc.pb.h"
+#include "media.pb.h"
 #include "stt.grpc.pb.h"
 #include "stt.pb.h"
 #include "voice_quality.grpc.pb.h"
@@ -17,93 +23,39 @@ namespace voiceqas {
 
 namespace {
 
-AudioFormat from_proto(voiceqas::v1::AudioFormat format) {
-    switch (format) {
-        case voiceqas::v1::PCM_S16LE_8K: return AudioFormat::PcmS16Le8k;
-        case voiceqas::v1::PCM_S16LE_16K: return AudioFormat::PcmS16Le16k;
-        case voiceqas::v1::RTP_PCMU: return AudioFormat::RtpPcmu;
-        case voiceqas::v1::RTP_PCMA: return AudioFormat::RtpPcma;
-        case voiceqas::v1::RTP_G722: return AudioFormat::RtpG722;
-        case voiceqas::v1::RTP_G729: return AudioFormat::RtpG729;
-        default: return AudioFormat::PcmS16Le8k;
+using server::audio_format_from_proto;
+using server::audio_format_to_proto;
+using server::fill_stt_event;
+using server::fill_stt_response;
+using server::quality_report_to_proto;
+
+std::map<std::string, std::string> grpc_carrier(const grpc::ServerContext* context) {
+    std::map<std::string, std::string> out;
+    if (!context) {
+        return out;
     }
+    for (const auto& pair : context->client_metadata()) {
+        out.emplace(std::string(pair.first.data(), pair.first.size()),
+                    std::string(pair.second.data(), pair.second.size()));
+    }
+    return out;
 }
 
-voiceqas::v1::AudioFormat to_proto(AudioFormat format) {
-    switch (format) {
-        case AudioFormat::PcmS16Le8k: return voiceqas::v1::PCM_S16LE_8K;
-        case AudioFormat::PcmS16Le16k: return voiceqas::v1::PCM_S16LE_16K;
-        case AudioFormat::RtpPcmu: return voiceqas::v1::RTP_PCMU;
-        case AudioFormat::RtpPcma: return voiceqas::v1::RTP_PCMA;
-        case AudioFormat::RtpG722: return voiceqas::v1::RTP_G722;
-        case AudioFormat::RtpG729: return voiceqas::v1::RTP_G729;
+std::string metadata_value(const grpc::ServerContext* context, const char* key) {
+    if (!context) {
+        return {};
     }
-    return voiceqas::v1::AUDIO_FORMAT_UNSPECIFIED;
-}
-
-void fill_metrics(const WindowMetrics& src, voiceqas::v1::Metrics* dst) {
-    dst->set_rms_dbfs(src.rms_dbfs);
-    dst->set_peak_dbfs(src.peak_dbfs);
-    dst->set_clipping_ratio(src.clipping_ratio);
-    dst->set_snr_estimate_db(src.snr_estimate_db);
-    dst->set_silence_ratio(src.silence_ratio);
-    dst->set_spectral_flatness(src.spectral_flatness);
-    dst->set_packet_loss_pct(src.packet_loss_pct);
-    dst->set_jitter_ms(src.jitter_ms);
-}
-
-voiceqas::v1::QualityReport to_proto_report(const std::string& session_id, const WindowMetrics& w) {
-    voiceqas::v1::QualityReport report;
-    report.set_session_id(session_id);
-    report.set_window_start_ms(w.window_start_ms);
-    report.set_composite_score(w.composite_score);
-    report.set_stt_ready(w.stt_ready);
-    fill_metrics(w, report.mutable_metrics());
-    return report;
-}
-
-void fill_stt_response(const stt::TranscriptResult& src, voiceqas::v1::SttTranscribeResponse* dst) {
-    dst->set_text(src.text);
-    dst->set_model(src.model);
-    dst->set_language(src.language);
-    dst->set_duration_ms(src.duration_ms);
-    dst->set_processing_ms(src.processing_ms);
-    if (!src.error.empty()) {
-        dst->set_error(src.error);
+    const auto& md = context->client_metadata();
+    auto it = md.find(key);
+    if (it == md.end()) {
+        return {};
     }
-    for (const auto& seg : src.segments) {
-        auto* out = dst->add_segments();
-        out->set_start_ms(seg.start_ms);
-        out->set_end_ms(seg.end_ms);
-        out->set_text(seg.text);
-    }
-}
-
-void fill_stt_event(
-    const std::string& session_id,
-    voiceqas::v1::SttEventType type,
-    const stt::TranscriptResult& src,
-    voiceqas::v1::SttTranscriptEvent* dst) {
-    dst->set_session_id(session_id);
-    dst->set_type(type);
-    dst->set_text(src.text);
-    dst->set_model(src.model);
-    dst->set_duration_ms(src.duration_ms);
-    dst->set_processing_ms(src.processing_ms);
-    if (!src.error.empty()) {
-        dst->set_error(src.error);
-    }
-    for (const auto& seg : src.segments) {
-        auto* out = dst->add_segments();
-        out->set_start_ms(seg.start_ms);
-        out->set_end_ms(seg.end_ms);
-        out->set_text(seg.text);
-    }
+    return std::string(it->second.data(), it->second.size());
 }
 
 class VoiceQualityServiceImpl final : public voiceqas::v1::VoiceQualityService::Service {
 public:
-    explicit VoiceQualityServiceImpl(std::shared_ptr<SessionManager> sessions)
+    explicit VoiceQualityServiceImpl(std::shared_ptr<VqaSessionManager> sessions)
         : sessions_(std::move(sessions)) {}
 
     grpc::Status Ready(grpc::ServerContext*, const voiceqas::v1::ReadyRequest*,
@@ -121,23 +73,28 @@ public:
             if (context->IsCancelled()) {
                 return grpc::Status::CANCELLED;
             }
+            tracing::RequestScope scope(
+                "gRPC VoiceQualityService/AnalyzeStream",
+                grpc_carrier(context),
+                frame.session_id());
             const auto payload = frame.payload();
-            const auto format = from_proto(frame.format());
+            const auto format = audio_format_from_proto(frame.format());
             if (auto report = sessions_->push_frame(
                     frame.session_id(),
                     format,
                     std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(payload.data()), payload.size()),
                     frame.timestamp_ms())) {
-                stream->Write(to_proto_report(frame.session_id(), *report));
+                stream->Write(quality_report_to_proto(frame.session_id(), *report));
             }
         }
         return grpc::Status::OK;
     }
 
-    grpc::Status AnalyzeBatch(grpc::ServerContext*,
+    grpc::Status AnalyzeBatch(grpc::ServerContext* context,
                               const voiceqas::v1::BatchRequest* request,
                               voiceqas::v1::BatchResponse* response) override {
-        const auto format = from_proto(request->format());
+        tracing::RequestScope scope("gRPC VoiceQualityService/AnalyzeBatch", grpc_carrier(context));
+        const auto format = audio_format_from_proto(request->format());
         const int sample_rate = request->sample_rate() > 0
             ? request->sample_rate()
             : sample_rate_for_format(format);
@@ -150,7 +107,7 @@ public:
         response->set_composite_score(result.composite_score);
         response->set_stt_ready(result.stt_ready);
         for (const auto& w : result.windows) {
-            *response->add_windows() = to_proto_report("batch", w);
+            *response->add_windows() = quality_report_to_proto("batch", w);
         }
         for (const auto& [start, end] : result.stt_ready_segments) {
             auto* seg = response->add_stt_ready_segments();
@@ -161,7 +118,7 @@ public:
     }
 
 private:
-    std::shared_ptr<SessionManager> sessions_;
+    std::shared_ptr<VqaSessionManager> sessions_;
 };
 
 class SpeechToTextServiceImpl final : public voiceqas::v1::SpeechToTextService::Service {
@@ -169,8 +126,9 @@ public:
     explicit SpeechToTextServiceImpl(std::shared_ptr<stt::SttSessionManager> stt_sessions)
         : stt_sessions_(std::move(stt_sessions)) {}
 
-    grpc::Status Ready(grpc::ServerContext*, const voiceqas::v1::SttReadyRequest*,
+    grpc::Status Ready(grpc::ServerContext* context, const voiceqas::v1::SttReadyRequest*,
                        voiceqas::v1::SttReadyResponse* response) override {
+        tracing::RequestScope scope("gRPC SpeechToTextService/Ready", grpc_carrier(context));
         const auto ready = stt_sessions_ ? stt_sessions_->engine().ready_status() : stt::SttReadyStatus{};
         response->set_status(ready.ready() ? "ready" : "unavailable");
         response->set_service("voiceqas-stt");
@@ -179,14 +137,19 @@ public:
         return grpc::Status::OK;
     }
 
-    grpc::Status Transcribe(grpc::ServerContext*,
+    grpc::Status Transcribe(grpc::ServerContext* context,
                             const voiceqas::v1::SttTranscribeRequest* request,
                             voiceqas::v1::SttTranscribeResponse* response) override {
+        const auto session_id = metadata_value(context, "x-session-id");
+        tracing::RequestScope scope(
+            "gRPC SpeechToTextService/Transcribe",
+            grpc_carrier(context),
+            session_id);
         if (!stt_sessions_) {
             response->set_error("STT not configured");
             return grpc::Status::OK;
         }
-        const auto format = from_proto(request->format());
+        const auto format = audio_format_from_proto(request->format());
         const int sample_rate = request->sample_rate() > 0
             ? request->sample_rate()
             : sample_rate_for_format(format);
@@ -197,6 +160,12 @@ public:
             options.model = stt::parse_model_choice(request->model(), options.model);
         } else {
             options.model = stt::parse_model_choice(stt_sessions_->config().default_model, stt::SttModelChoice::Auto);
+        }
+        if (const auto provider = metadata_value(context, "x-stt-provider"); !provider.empty()) {
+            options.provider = provider;
+        }
+        if (!session_id.empty()) {
+            options.telemetry_session_id = session_id;
         }
         const auto result = stt_sessions_->transcribe_batch(
             format,
@@ -223,9 +192,14 @@ public:
             if (context->IsCancelled()) {
                 return grpc::Status::CANCELLED;
             }
+            tracing::RequestScope scope(
+                chunk.flush() ? "gRPC SpeechToTextService/TranscribeStream flush"
+                              : "gRPC SpeechToTextService/TranscribeStream",
+                grpc_carrier(context),
+                chunk.session_id());
 
             const auto& payload = chunk.payload();
-            const auto format = from_proto(chunk.format());
+            const auto format = audio_format_from_proto(chunk.format());
             const int sample_rate = chunk.sample_rate() > 0
                 ? chunk.sample_rate()
                 : sample_rate_for_format(format);
@@ -236,6 +210,13 @@ public:
                     format,
                     std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(payload.data()), payload.size()),
                     sample_rate);
+                if (const auto partial = stt_sessions_->emit_partial_if_due(chunk.session_id())) {
+                    if (partial->ok && !partial->text.empty()) {
+                        voiceqas::v1::SttTranscriptEvent event;
+                        fill_stt_event(chunk.session_id(), voiceqas::v1::STT_PARTIAL, *partial, &event);
+                        stream->Write(event);
+                    }
+                }
             }
 
             if (chunk.flush()) {
@@ -247,7 +228,7 @@ public:
                     options.model = stt::parse_model_choice(
                         stt_sessions_->config().default_model, stt::SttModelChoice::Auto);
                 }
-                const auto result = stt_sessions_->flush(chunk.session_id(), options);
+                const auto result = stt_sessions_->flush_and_publish(chunk.session_id(), options, false);
                 voiceqas::v1::SttTranscriptEvent event;
                 const auto type = result.ok ? voiceqas::v1::STT_FINAL : voiceqas::v1::STT_ERROR;
                 fill_stt_event(chunk.session_id(), type, result, &event);
@@ -261,27 +242,136 @@ private:
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
 };
 
+class MediaRelayServiceImpl final : public voiceqas::v1::MediaRelayService::Service {
+public:
+    explicit MediaRelayServiceImpl(std::shared_ptr<media::MediaSessionManager> media_sessions,
+                                   std::shared_ptr<stt::SttSessionManager> stt_sessions)
+        : media_sessions_(std::move(media_sessions)), stt_sessions_(std::move(stt_sessions)) {}
+
+    grpc::Status OpenSession(grpc::ServerContext*,
+                             const voiceqas::v1::OpenMediaSessionRequest* request,
+                             voiceqas::v1::OpenMediaSessionResponse* response) override {
+        if (!media_sessions_) {
+            response->set_error("media not configured");
+            return grpc::Status::OK;
+        }
+        media::MediaSessionConfig cfg;
+        const auto& s = request->session();
+        cfg.session_id = s.session_id();
+        cfg.format = audio_format_from_proto(s.format());
+        cfg.sample_rate = s.sample_rate() > 0 ? s.sample_rate() : sample_rate_for_format(cfg.format);
+        cfg.remote_host = s.remote_host();
+        cfg.remote_port = static_cast<uint16_t>(s.remote_port());
+        cfg.inbound_host = s.inbound_host();
+        cfg.inbound_port = static_cast<uint16_t>(s.inbound_port());
+        std::string error;
+        if (!media_sessions_->open_session(cfg, error)) {
+            response->set_error(error);
+            return grpc::Status::OK;
+        }
+        response->set_status("ok");
+        response->set_session_id(cfg.session_id);
+        response->set_sample_rate(cfg.sample_rate);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status CloseSession(grpc::ServerContext*,
+                              const voiceqas::v1::CloseMediaSessionRequest* request,
+                              voiceqas::v1::CloseMediaSessionResponse* response) override {
+        if (!media_sessions_) {
+            response->set_error("media not configured");
+            return grpc::Status::OK;
+        }
+        if (stt_sessions_) {
+            stt_sessions_->flush_and_publish(request->session_id(), {}, false);
+        }
+        if (!media_sessions_->close_session(request->session_id())) {
+            response->set_error("session not found");
+            return grpc::Status::OK;
+        }
+        response->set_status("ok");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ListSessions(grpc::ServerContext*,
+                              const voiceqas::v1::ListMediaSessionsRequest*,
+                              voiceqas::v1::ListMediaSessionsResponse* response) override {
+        if (!media_sessions_) {
+            return grpc::Status::OK;
+        }
+        for (const auto& cfg : media_sessions_->list_sessions()) {
+            auto* out = response->add_sessions();
+            out->set_session_id(cfg.session_id);
+            out->set_format(audio_format_to_proto(cfg.format));
+            out->set_sample_rate(cfg.sample_rate);
+            out->set_remote_host(cfg.remote_host);
+            out->set_remote_port(cfg.remote_port);
+            out->set_inbound_host(cfg.inbound_host);
+            out->set_inbound_port(cfg.inbound_port);
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SendAgentAudio(grpc::ServerContext*,
+                                const voiceqas::v1::SendAgentAudioRequest* request,
+                                voiceqas::v1::SendAgentAudioResponse* response) override {
+        if (!media_sessions_) {
+            response->set_error("media not configured");
+            return grpc::Status::OK;
+        }
+        const auto& payload = request->pcm_payload();
+        if (payload.size() % 2 != 0) {
+            response->set_error("pcm payload must be even length");
+            return grpc::Status::OK;
+        }
+        std::vector<int16_t> pcm(payload.size() / 2);
+        std::memcpy(pcm.data(), payload.data(), payload.size());
+        const auto result = media_sessions_->send_agent_pcm(
+            request->session_id(), pcm, request->sample_rate() > 0 ? request->sample_rate() : 16000);
+        if (!result.ok) {
+            response->set_error(result.error);
+            return grpc::Status::OK;
+        }
+        response->set_status("ok");
+        response->set_rtp_packets(static_cast<int32_t>(result.rtp_packets.size()));
+        response->set_bytes_sent(static_cast<int32_t>(result.bytes_sent));
+        return grpc::Status::OK;
+    }
+
+private:
+    std::shared_ptr<media::MediaSessionManager> media_sessions_;
+    std::shared_ptr<stt::SttSessionManager> stt_sessions_;
+};
+
 }  // namespace
 
 GrpcServer::GrpcServer(std::string bind_addr,
-                       std::shared_ptr<SessionManager> sessions,
-                       std::shared_ptr<stt::SttSessionManager> stt_sessions)
+                       std::shared_ptr<VqaSessionManager> sessions,
+                       std::shared_ptr<stt::SttSessionManager> stt_sessions,
+                       std::shared_ptr<media::MediaSessionManager> media_sessions)
     : bind_addr_(std::move(bind_addr)),
       sessions_(std::move(sessions)),
-      stt_sessions_(std::move(stt_sessions)) {}
+      stt_sessions_(std::move(stt_sessions)),
+      media_sessions_(std::move(media_sessions)) {}
 
 void GrpcServer::run() {
     VoiceQualityServiceImpl quality_service(sessions_);
     SpeechToTextServiceImpl stt_service(stt_sessions_);
+    MediaRelayServiceImpl media_service(media_sessions_, stt_sessions_);
     grpc::ServerBuilder builder;
     builder.AddListeningPort(bind_addr_, grpc::InsecureServerCredentials());
     builder.RegisterService(&quality_service);
     builder.RegisterService(&stt_service);
+    if (media_sessions_) {
+        builder.RegisterService(&media_service);
+    }
     auto server = builder.BuildAndStart();
     if (!server) {
         throw std::runtime_error("failed to start gRPC server on " + bind_addr_);
     }
-    std::cout << "gRPC listening on " << bind_addr_ << " (VoiceQuality + SpeechToText)\n";
+    std::cout << "gRPC listening on " << bind_addr_
+              << " (VoiceQuality + SpeechToText"
+              << (media_sessions_ ? " + MediaRelay" : "") << ")\n";
     server->Wait();
 }
 

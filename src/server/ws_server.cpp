@@ -1,3 +1,4 @@
+#include "voiceqas/server/auth.hpp"
 #include "voiceqas/server/ws_server.hpp"
 
 #include <boost/asio/dispatch.hpp>
@@ -7,14 +8,22 @@
 #include <boost/beast/websocket.hpp>
 #include <nlohmann/json.hpp>
 
+#include <atomic>
+#include <cstring>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <queue>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "voiceqas/json_util.hpp"
+#include "voiceqas/ops/metrics_hub.hpp"
 #include "voiceqas/stt/json_util.hpp"
 #include "voiceqas/stt/model_util.hpp"
+#include "voiceqas/tracing/tracing.hpp"
 
 namespace voiceqas {
 namespace beast = boost::beast;
@@ -25,9 +34,14 @@ using tcp = boost::asio::ip::tcp;
 
 namespace {
 
+net::const_buffer literal_buffer(const char* data) {
+    return net::buffer(data, std::strlen(data));
+}
+
 enum class WsMode {
     Quality,
     Stt,
+    Ops,
 };
 
 struct WsSessionConfig {
@@ -36,7 +50,19 @@ struct WsSessionConfig {
     int sample_rate = 8000;
     int64_t timestamp_ms = 0;
     bool ready = false;
+    std::map<std::string, std::string> trace_headers;
 };
+
+std::map<std::string, std::string> capture_trace_headers(const http::request<http::string_body>& req) {
+    std::map<std::string, std::string> out;
+    for (const auto& field : req) {
+        const std::string name = std::string(field.name_string());
+        if (name == "traceparent" || name == "tracestate") {
+            out[name] = std::string(field.value());
+        }
+    }
+    return out;
+}
 
 std::string target_path(const http::request<http::string_body>& req) {
     const auto target = std::string(req.target());
@@ -46,10 +72,11 @@ std::string target_path(const http::request<http::string_body>& req) {
 
 class QualityWsSession : public std::enable_shared_from_this<QualityWsSession> {
 public:
-    QualityWsSession(tcp::socket socket, std::shared_ptr<SessionManager> sessions)
+    QualityWsSession(tcp::socket socket, std::shared_ptr<VqaSessionManager> sessions)
         : ws_(std::move(socket)), sessions_(std::move(sessions)) {}
 
     void accept(http::request<http::string_body> req) {
+        config_.trace_headers = capture_trace_headers(req);
         ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
         ws_.set_option(websocket::stream_base::decorator(
             [](websocket::response_type& res) {
@@ -92,7 +119,7 @@ private:
                 config_.timestamp_ms = json.value("timestamp_ms", 0);
                 config_.ready = true;
                 ws_.text(true);
-                ws_.async_write(net::buffer(R"({"status":"ok","mode":"quality"})"),
+                ws_.async_write(literal_buffer(R"({"status":"ok","mode":"quality"})"),
                                 beast::bind_front_handler(&QualityWsSession::on_write, shared_from_this()));
                 return;
             } catch (const std::exception& e) {
@@ -105,6 +132,7 @@ private:
         }
 
         std::vector<uint8_t> payload(data.begin(), data.end());
+        tracing::RequestScope scope("WS /v1/stream", config_.trace_headers, config_.session_id);
         if (auto report = sessions_->push_frame(
                 config_.session_id,
                 config_.format,
@@ -132,8 +160,142 @@ private:
 
     websocket::stream<tcp::socket> ws_;
     beast::flat_buffer buffer_;
-    std::shared_ptr<SessionManager> sessions_;
+    std::shared_ptr<VqaSessionManager> sessions_;
     WsSessionConfig config_;
+};
+
+class OpsWsSession : public std::enable_shared_from_this<OpsWsSession> {
+public:
+    OpsWsSession(tcp::socket socket) : ws_(std::move(socket)) {}
+
+    void accept(http::request<http::string_body> req) {
+        ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
+        ws_.set_option(websocket::stream_base::decorator(
+            [](websocket::response_type& res) {
+                res.set(http::field::server, "voiceqas");
+            }));
+        ws_.async_accept(req, beast::bind_front_handler(&OpsWsSession::on_accept, shared_from_this()));
+    }
+
+private:
+    void on_accept(beast::error_code ec) {
+        if (ec) {
+            return;
+        }
+        do_read();
+    }
+
+    void do_read() {
+        ws_.async_read(buffer_, beast::bind_front_handler(&OpsWsSession::on_read, shared_from_this()));
+    }
+
+    void on_read(beast::error_code ec, std::size_t) {
+        if (ec == websocket::error::closed) {
+            teardown();
+            return;
+        }
+        if (ec) {
+            teardown();
+            return;
+        }
+
+        const auto data = beast::buffers_to_string(buffer_.data());
+        buffer_.consume(buffer_.size());
+
+        if (!ready_) {
+            try {
+                const auto json = nlohmann::json::parse(data);
+                if (json.contains("filter_session_id")) {
+                    const auto filter = json["filter_session_id"].get<std::string>();
+                    if (!filter.empty()) {
+                        filter_session_id_ = filter;
+                    }
+                }
+                subscribe_stt_ = json.value("subscribe_stt", true);
+                subscribe_vqa_ = json.value("subscribe_vqa", true);
+                subscribe_alerts_ = json.value("subscribe_alerts", true);
+                subscribe_pipeline_ = json.value("subscribe_pipeline", true);
+                const auto token = json.value("token", std::string{});
+                if (!check_ops_token(token)) {
+                    enqueue(R"({"error":"unauthorized"})");
+                    ws_.close(websocket::close_code::policy_error);
+                    return;
+                }
+                ready_ = true;
+                ops::OpsMetricsHub::SubscribeOptions sub_opts;
+                sub_opts.filter_session_id = filter_session_id_;
+                sub_opts.stt = subscribe_stt_;
+                sub_opts.vqa = subscribe_vqa_;
+                sub_opts.alerts = subscribe_alerts_;
+                sub_opts.pipeline = subscribe_pipeline_;
+                listener_id_ = ops::OpsMetricsHub::instance().subscribe(
+                    sub_opts,
+                    [self = weak_from_this()](const nlohmann::json& event) {
+                        if (auto locked = self.lock()) {
+                            locked->enqueue(event.dump());
+                        }
+                    });
+                enqueue(R"({"status":"ok","mode":"ops"})");
+                do_read();
+                return;
+            } catch (const std::exception& e) {
+                enqueue(std::string(R"({"error":")") + e.what() + R"("})");
+                do_read();
+                return;
+            }
+        }
+
+        do_read();
+    }
+
+    void enqueue(std::string payload) {
+        net::post(ws_.get_executor(), [self = shared_from_this(), payload = std::move(payload)]() mutable {
+            self->outbound_.push(std::move(payload));
+            self->pump_write();
+        });
+    }
+
+    void pump_write() {
+        if (writing_ || outbound_.empty()) {
+            return;
+        }
+        writing_ = true;
+        ws_.text(true);
+        ws_.async_write(
+            net::buffer(outbound_.front()),
+            beast::bind_front_handler(&OpsWsSession::on_write, shared_from_this()));
+    }
+
+    void on_write(beast::error_code ec, std::size_t) {
+        writing_ = false;
+        if (ec) {
+            teardown();
+            return;
+        }
+        outbound_.pop();
+        if (!outbound_.empty()) {
+            pump_write();
+        }
+    }
+
+    void teardown() {
+        if (listener_id_) {
+            ops::OpsMetricsHub::instance().unsubscribe(*listener_id_);
+            listener_id_.reset();
+        }
+    }
+
+    websocket::stream<tcp::socket> ws_;
+    beast::flat_buffer buffer_;
+    bool ready_ = false;
+    bool subscribe_vqa_ = true;
+    bool subscribe_stt_ = true;
+    bool subscribe_alerts_ = true;
+    bool subscribe_pipeline_ = true;
+    std::optional<std::string> filter_session_id_;
+    std::optional<ops::OpsMetricsHub::ListenerId> listener_id_;
+    std::queue<std::string> outbound_;
+    bool writing_ = false;
 };
 
 class SttWsSession : public std::enable_shared_from_this<SttWsSession> {
@@ -142,7 +304,12 @@ public:
         : ws_(std::move(socket)), stt_sessions_(std::move(stt_sessions)) {}
 
     void accept(http::request<http::string_body> req) {
-        ws_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
+        config_.trace_headers = capture_trace_headers(req);
+        websocket::stream_base::timeout stt_timeout;
+        stt_timeout.handshake_timeout = std::chrono::seconds(30);
+        stt_timeout.idle_timeout = std::chrono::minutes(10);
+        stt_timeout.keep_alive_pings = true;
+        ws_.set_option(stt_timeout);
         ws_.set_option(websocket::stream_base::decorator(
             [](websocket::response_type& res) {
                 res.set(http::field::server, "voiceqas");
@@ -162,9 +329,60 @@ private:
         ws_.async_read(buffer_, beast::bind_front_handler(&SttWsSession::on_read, shared_from_this()));
     }
 
+    void send_json(std::string payload) {
+        ws_.text(true);
+        ws_.async_write(
+            net::buffer(payload),
+            beast::bind_front_handler(&SttWsSession::on_write, shared_from_this()));
+    }
+
+    void handle_flush(stt::TranscribeOptions options) {
+        if (flushing_.exchange(true)) {
+            send_json(R"({"type":"error","ok":false,"error":"flush already in progress"})");
+            return;
+        }
+
+        const auto session_id = config_.session_id;
+        auto stt = stt_sessions_;
+        auto executor = ws_.get_executor();
+
+        std::thread([self = shared_from_this(), session_id, options = std::move(options), stt, executor, trace_headers = config_.trace_headers]() mutable {
+            tracing::RequestScope scope("WS /v1/stt/stream flush", trace_headers, session_id);
+            nlohmann::json out;
+            try {
+                const auto result = stt->flush_and_publish(session_id, options, false);
+                out = transcript_to_json(result);
+                out["session_id"] = session_id;
+                out["type"] = result.ok ? "final" : "error";
+            } catch (const std::exception& e) {
+                out = {
+                    {"type", "error"},
+                    {"ok", false},
+                    {"session_id", session_id},
+                    {"error", e.what()},
+                };
+            }
+
+            const auto payload = std::make_shared<std::string>(out.dump());
+            net::post(executor, [self, payload]() {
+                self->flushing_ = false;
+                if (!self->ws_.next_layer().is_open()) {
+                    if (self->config_.ready) {
+                        self->stt_sessions_->remove_session(self->config_.session_id);
+                    }
+                    return;
+                }
+                self->ws_.text(true);
+                self->ws_.async_write(
+                    net::buffer(*payload),
+                    beast::bind_front_handler(&SttWsSession::on_write, self));
+            });
+        }).detach();
+    }
+
     void on_read(beast::error_code ec, std::size_t) {
         if (ec == websocket::error::closed) {
-            if (config_.ready) {
+            if (config_.ready && !flushing_.load()) {
                 stt_sessions_->remove_session(config_.session_id);
             }
             return;
@@ -223,23 +441,24 @@ private:
                     if (json.contains("language")) {
                         options.language = json.at("language").get<std::string>();
                     }
-                    const auto result = stt_sessions_->flush(config_.session_id, options);
-                    auto out = transcript_to_json(result);
-                    out["session_id"] = config_.session_id;
-                    out["type"] = result.ok ? "final" : "error";
-                    const auto payload = out.dump();
-                    ws_.text(true);
-                    ws_.async_write(net::buffer(payload),
-                                    beast::bind_front_handler(&SttWsSession::on_write, shared_from_this()));
+                    if (json.contains("provider")) {
+                        options.provider = json.at("provider").get<std::string>();
+                    }
+                    handle_flush(std::move(options));
+                    do_read();
                     return;
                 }
-            } catch (...) {
+            } catch (const std::exception& e) {
+                send_json(std::string(R"({"type":"error","ok":false,"error":")") + e.what() + R"("})");
+                do_read();
+                return;
             }
             do_read();
             return;
         }
 
         std::vector<uint8_t> payload(data.begin(), data.end());
+        tracing::RequestScope scope("WS /v1/stt/stream", config_.trace_headers, config_.session_id);
         stt_sessions_->append_chunk(
             config_.session_id,
             config_.format,
@@ -259,13 +478,14 @@ private:
     beast::flat_buffer buffer_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
     WsSessionConfig config_;
+    std::atomic<bool> flushing_{false};
 };
 
 class HttpUpgradeSession : public std::enable_shared_from_this<HttpUpgradeSession> {
 public:
     HttpUpgradeSession(
         tcp::socket socket,
-        std::shared_ptr<SessionManager> sessions,
+        std::shared_ptr<VqaSessionManager> sessions,
         std::shared_ptr<stt::SttSessionManager> stt_sessions)
         : socket_(std::move(socket)),
           sessions_(std::move(sessions)),
@@ -289,6 +509,8 @@ private:
         WsMode mode = WsMode::Quality;
         if (path == "/v1/stt/stream") {
             mode = WsMode::Stt;
+        } else if (path == "/v1/ops/stream") {
+            mode = WsMode::Ops;
         } else if (path != "/v1/stream" && path != "/") {
             http::response<http::string_body> res{http::status::not_found, req_.version()};
             res.set(http::field::server, "voiceqas");
@@ -304,6 +526,8 @@ private:
 
         if (mode == WsMode::Stt) {
             std::make_shared<SttWsSession>(std::move(socket_), stt_sessions_)->accept(std::move(req_));
+        } else if (mode == WsMode::Ops) {
+            std::make_shared<OpsWsSession>(std::move(socket_))->accept(std::move(req_));
         } else {
             std::make_shared<QualityWsSession>(std::move(socket_), sessions_)->accept(std::move(req_));
         }
@@ -312,7 +536,7 @@ private:
     tcp::socket socket_;
     beast::flat_buffer buffer_;
     http::request<http::string_body> req_;
-    std::shared_ptr<SessionManager> sessions_;
+    std::shared_ptr<VqaSessionManager> sessions_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
 };
 
@@ -321,7 +545,7 @@ public:
     WsListener(
         net::io_context& ioc,
         tcp::endpoint endpoint,
-        std::shared_ptr<SessionManager> sessions,
+        std::shared_ptr<VqaSessionManager> sessions,
         std::shared_ptr<stt::SttSessionManager> stt_sessions)
         : ioc_(ioc),
           acceptor_(ioc),
@@ -351,7 +575,7 @@ private:
 
     net::io_context& ioc_;
     tcp::acceptor acceptor_;
-    std::shared_ptr<SessionManager> sessions_;
+    std::shared_ptr<VqaSessionManager> sessions_;
     std::shared_ptr<stt::SttSessionManager> stt_sessions_;
 };
 
@@ -359,7 +583,7 @@ private:
 
 WebSocketServer::WebSocketServer(
     std::string bind_addr,
-    std::shared_ptr<SessionManager> sessions,
+    std::shared_ptr<VqaSessionManager> sessions,
     std::shared_ptr<stt::SttSessionManager> stt_sessions)
     : bind_addr_(std::move(bind_addr)),
       sessions_(std::move(sessions)),
@@ -380,7 +604,7 @@ void WebSocketServer::run() {
             stt_sessions_);
         listener->run();
         std::cout << "WebSocket listening on " << bind_addr_
-                  << " (/v1/stream quality, /v1/stt/stream transcription)\n";
+                  << " (/v1/stream quality, /v1/stt/stream transcription, /v1/ops/stream ops)\n";
         ioc.run();
         running_ = false;
     });

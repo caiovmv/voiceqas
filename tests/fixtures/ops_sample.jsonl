@@ -1,0 +1,4 @@
+{"session_id":"demo-call-1","type":"vqa_window","ts_ms":1700000000000,"composite_score":0.82}
+{"session_id":"demo-call-1","type":"stt_partial","ts_ms":1700000003000,"text":"olá"}
+{"session_id":"demo-call-1","type":"alert","ts_ms":1700000005000,"reason":"low_score"}
+{"session_id":"demo-call-2","type":"stt_final","ts_ms":1700000008000,"text":"atendimento encerrado"}

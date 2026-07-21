@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  buildVariants,
+  buildCodecRoundTripPcm,
+  buildSttEnhancedPcm,
   createPreviewUrl,
   createWavBlob,
+  downloadBlob,
+  downloadComparisonPackZip,
   encodeForTransport,
-  revokeVariantUrls,
-  type EncodedVariant,
+  type ComparisonPackFile,
 } from '../lib/audio';
-import { COMPARE_PRESETS, formatConfigLabel, type CodecConfig } from '../lib/types';
+import { RECORD_QUALITY_OPTIONS, formatConfigLabel, type CodecConfig } from '../lib/types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
 interface Props {
@@ -17,14 +19,17 @@ interface Props {
 }
 
 export function AudioPreviewPanel({ pcm, pcmRate, config }: Props) {
-  const { playingId, queueLabel, playUrl, playAll, stop } = useAudioPlayer();
-  const [variants, setVariants] = useState<EncodedVariant[]>([]);
-  const [selectedPresets, setSelectedPresets] = useState<string[]>(
-    COMPARE_PRESETS.map((p) => p.id),
-  );
-  const [currentPreviewUrl, setCurrentPreviewUrl] = useState<string | null>(null);
+  const { playingId, queueLabel, playUrl, stop } = useAudioPlayer();
+  const [codecPreviewUrl, setCodecPreviewUrl] = useState<string | null>(null);
+  const [sttPreviewUrl, setSttPreviewUrl] = useState<string | null>(null);
+  const [packFiles, setPackFiles] = useState<ComparisonPackFile[]>([]);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [variantsLoading, setVariantsLoading] = useState(false);
+  const [packLoading, setPackLoading] = useState(false);
+
+  const qualityLabel =
+    RECORD_QUALITY_OPTIONS.find(
+      (o) => o.format === config.format && o.sampleRate === config.sampleRate,
+    )?.label ?? formatConfigLabel(config);
 
   const originalUrl = useMemo(() => {
     if (!pcm?.length) return null;
@@ -33,22 +38,52 @@ export function AudioPreviewPanel({ pcm, pcmRate, config }: Props) {
 
   useEffect(() => {
     if (!pcm?.length) {
-      setCurrentPreviewUrl(null);
+      setCodecPreviewUrl(null);
+      setSttPreviewUrl(null);
+      setPackFiles([]);
       return;
     }
     let cancelled = false;
     setPreviewError(null);
-    encodeForTransport(pcm, pcmRate, config)
-      .then((encoded) => createPreviewUrl(encoded))
-      .then((url) => {
-        if (!cancelled) setCurrentPreviewUrl(url);
-      })
-      .catch((e) => {
+    setPackLoading(true);
+
+    (async () => {
+      try {
+        const [roundTrip, sttPcm] = await Promise.all([
+          buildCodecRoundTripPcm(pcm, pcmRate, config),
+          buildSttEnhancedPcm(pcm, pcmRate, config),
+        ]);
+        if (cancelled) return;
+
+        const encoded = await encodeForTransport(pcm, pcmRate, config);
+        const codecUrl = await createPreviewUrl(encoded);
+        const sttUrl = URL.createObjectURL(createWavBlob(sttPcm, 16000));
+
+        setCodecPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return codecUrl;
+        });
+        setSttPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return sttUrl;
+        });
+        setPackFiles([
+          { name: '01-original.wav', blob: createWavBlob(pcm, pcmRate) },
+          {
+            name: `02-codec-${config.format.replace(/rtp_|pcm_s16le_/g, '')}-roundtrip.wav`,
+            blob: createWavBlob(roundTrip.pcm, roundTrip.sampleRate),
+          },
+          { name: '03-stt-enhanced-16khz.wav', blob: createWavBlob(sttPcm, 16000) },
+        ]);
+      } catch (e) {
         if (!cancelled) {
           setPreviewError(e instanceof Error ? e.message : String(e));
-          setCurrentPreviewUrl(null);
         }
-      });
+      } finally {
+        if (!cancelled) setPackLoading(false);
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -57,80 +92,62 @@ export function AudioPreviewPanel({ pcm, pcmRate, config }: Props) {
   useEffect(() => {
     return () => {
       if (originalUrl) URL.revokeObjectURL(originalUrl);
-      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
-      revokeVariantUrls(variants);
+      if (codecPreviewUrl) URL.revokeObjectURL(codecPreviewUrl);
+      if (sttPreviewUrl) URL.revokeObjectURL(sttPreviewUrl);
     };
-  }, [originalUrl, currentPreviewUrl, variants]);
+  }, [originalUrl, codecPreviewUrl, sttPreviewUrl]);
 
-  const generateVariants = useCallback(async () => {
+  const downloadPack = async () => {
     if (!pcm?.length) return;
-    setVariantsLoading(true);
+    setPackLoading(true);
     setPreviewError(null);
     try {
-      const next = await buildVariants(pcm, pcmRate, selectedPresets, config.sessionId);
-      setVariants((prev) => {
-        revokeVariantUrls(prev);
-        return next;
-      });
+      await downloadComparisonPackZip(pcm, pcmRate, config);
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : String(e));
     } finally {
-      setVariantsLoading(false);
+      setPackLoading(false);
     }
-  }, [pcm, pcmRate, selectedPresets, config.sessionId]);
-
-  const togglePreset = (id: string) => {
-    setSelectedPresets((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const playOriginal = () => originalUrl && playUrl('original', originalUrl, 'Original');
-  const playCurrent = () =>
-    currentPreviewUrl &&
-    playUrl('current', currentPreviewUrl, `Enviado: ${formatConfigLabel(config)}`);
-
-  const playAllVariants = () => {
-    const items = variants.map((v) => ({
-      id: v.id,
-      url: v.previewUrl,
-      label: v.label,
-    }));
-    if (originalUrl) {
-      items.unshift({ id: 'original', url: originalUrl, label: 'Original' });
-    }
-    playAll(items);
   };
 
   if (!pcm?.length) {
     return (
       <section className="panel">
-        <h2>Preview de áudio</h2>
-        <p className="muted">Grave ou carregue um áudio para ouvir o original e as variantes.</p>
+        <h2>Preview & download</h2>
+        <p className="muted">Grave ou carregue um áudio para comparar original, codec e STT.</p>
       </section>
     );
   }
 
   return (
     <section className="panel">
-      <h2>Preview de áudio</h2>
+      <h2>Preview & download</h2>
       <p className="muted">
-        Ouça o original e como ficou após encode/decode (round-trip) — o mesmo fluxo enviado à API.
-        G.722 e G.729 usam o backend para pack/decode RTP.
+        <strong>01 Original</strong> — exatamente o que o microfone capturou ({pcmRate} Hz).{' '}
+        <strong>02 Codec</strong> — após encode/decode {qualityLabel} (como no tronco SIP; soa mais
+        estreito). <strong>03 STT</strong> — PCM 16 kHz enviado ao Parakeet/Whisper.
       </p>
 
       {previewError && <p className="error">{previewError}</p>}
+      {packLoading && <p className="muted">Processando áudio…</p>}
 
       <div className="row player-row">
-        <button className="btn" onClick={playOriginal} disabled={playingId === 'original'}>
+        <button className="btn" onClick={() => originalUrl && playUrl('original', originalUrl, 'Original')} disabled={playingId === 'original'}>
           ▶ Original ({pcmRate} Hz)
         </button>
         <button
           className="btn primary"
-          onClick={playCurrent}
-          disabled={playingId === 'current' || !currentPreviewUrl}
+          onClick={() => codecPreviewUrl && playUrl('codec', codecPreviewUrl, qualityLabel)}
+          disabled={playingId === 'codec' || !codecPreviewUrl}
         >
-          ▶ Como enviado (config atual)
+          ▶ Codec ({qualityLabel})
+        </button>
+        <button
+          className="btn primary"
+          onClick={() => sttPreviewUrl && playUrl('stt', sttPreviewUrl, 'STT enhanced')}
+          disabled={playingId === 'stt' || !sttPreviewUrl}
+        >
+          ▶ STT enhanced (16 kHz)
         </button>
         {playingId && (
           <button className="btn" onClick={stop}>
@@ -140,48 +157,25 @@ export function AudioPreviewPanel({ pcm, pcmRate, config }: Props) {
       </div>
       {queueLabel && <p className="playing-label">Tocando: {queueLabel}</p>}
 
-      <h3 className="subhead">Comparar múltiplas configurações</h3>
-      <p className="muted">Mesmo áudio gravado, codificado com presets SIP diferentes.</p>
-
-      <div className="preset-grid">
-        {COMPARE_PRESETS.map((p) => (
-          <label key={p.id} className="checkbox preset-chip">
-            <input
-              type="checkbox"
-              checked={selectedPresets.includes(p.id)}
-              onChange={() => togglePreset(p.id)}
-            />
-            {p.label}
-          </label>
-        ))}
-      </div>
-
       <div className="row">
-        <button
-          className="btn primary"
-          onClick={() => void generateVariants()}
-          disabled={selectedPresets.length === 0 || variantsLoading}
-        >
-          {variantsLoading ? 'Gerando…' : `Gerar ${selectedPresets.length} variantes`}
+        <button className="btn primary" type="button" onClick={() => void downloadPack()} disabled={packLoading}>
+          ⬇ Baixar pack ZIP (3 arquivos)
         </button>
-        {variants.length > 0 && (
-          <button className="btn" onClick={playAllVariants}>
-            ▶ Tocar todas ({variants.length + 1} com original)
-          </button>
-        )}
       </div>
 
-      {variants.length > 0 && (
-        <ul className="variant-list">
-          {variants.map((v) => (
-            <li key={v.id} className="variant-item">
-              <span>{v.label}</span>
+      {packFiles.length > 0 && (
+        <ul className="variant-list pack-list">
+          {packFiles.map((f) => (
+            <li key={f.name} className="variant-item">
+              <span>
+                <code>{f.name}</code>
+              </span>
               <button
+                type="button"
                 className="btn sm"
-                onClick={() => playUrl(v.id, v.previewUrl, v.label)}
-                disabled={playingId === v.id}
+                onClick={() => downloadBlob(f.blob, f.name)}
               >
-                ▶
+                ⬇ WAV
               </button>
             </li>
           ))}

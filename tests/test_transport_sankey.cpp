@@ -1,0 +1,32 @@
+#include <gtest/gtest.h>
+
+#include "voiceqas/ops/pipeline_tracker.hpp"
+#include "voiceqas/ops/transport_sankey.hpp"
+
+namespace voiceqas::ops {
+
+TEST(PipelineTrackerTest, BuildSnapshotContainsTransportSankey) {
+    auto& tracker = PipelineTracker::instance();
+    tracker.record_rtp_ingress("snap-transport", 640, 2.0, 0.0);
+    tracker.record_transport_ingress("snap-transport", transport_node::kRest, 320, 5.0, 0.0);
+    const auto snapshot = tracker.build_snapshot("snap-transport");
+    EXPECT_EQ(snapshot["scope"], "session");
+    EXPECT_TRUE(snapshot.contains("transport_sankey"));
+    EXPECT_TRUE(snapshot["transport_sankey"].contains("inbound"));
+    const auto inbound_links = snapshot["transport_sankey"]["inbound"]["links"];
+    EXPECT_TRUE(inbound_links.is_array());
+    EXPECT_GT(inbound_links.size(), 0u);
+    tracker.remove_session("snap-transport");
+}
+
+TEST(TransportSankeyTest, InboundLinksMediaToExternalAi) {
+    std::unordered_map<std::string, PipelineStageMetrics> transports;
+    transports[transport_node::kSipTrunk].bytes_out = 1000;
+    transports[transport_node::kMediaPipeline].bytes_out = 800;
+    transports[transport_node::kExternalAi].bytes_in = 500;
+    const auto inbound = build_transport_sankey(transports, "inbound");
+    EXPECT_EQ(inbound["direction"], "inbound");
+    EXPECT_GT(inbound["links"].size(), 0u);
+}
+
+}  // namespace voiceqas::ops

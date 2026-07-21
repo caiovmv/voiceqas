@@ -7,7 +7,10 @@ export interface RecordingState {
   error: string | null;
 }
 
-/** Grava PCM na taxa nativa do browser/arquivo — resample ocorre por variante de codec. */
+/** Taxa alvo para gravação no tester (wideband telefonia / G.722). */
+const TARGET_SAMPLE_RATE = 16000;
+
+/** Grava PCM na taxa do AudioContext — resample por codec só quando necessário. */
 export function useRecorder() {
   const [state, setState] = useState<RecordingState>({
     isRecording: false,
@@ -15,7 +18,8 @@ export function useRecorder() {
     error: null,
   });
   const [pcm, setPcm] = useState<Int16Array | null>(null);
-  const [pcmRate, setPcmRate] = useState(48000);
+  const [pcmRate, setPcmRate] = useState(TARGET_SAMPLE_RATE);
+  const [liveWave, setLiveWave] = useState<Float32Array | null>(null);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -41,10 +45,12 @@ export function useRecorder() {
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false,
+          sampleRate: TARGET_SAMPLE_RATE,
+          channelCount: 1,
         },
       });
       streamRef.current = stream;
-      const ctx = new AudioContext();
+      const ctx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
       ctxRef.current = ctx;
       setPcmRate(ctx.sampleRate);
 
@@ -53,9 +59,14 @@ export function useRecorder() {
       processor.onaudioprocess = (e) => {
         const input = e.inputBuffer.getChannelData(0);
         chunksRef.current.push(new Float32Array(input));
+        setLiveWave(new Float32Array(input));
       };
+      // ScriptProcessor precisa de destino, mas não monitorar no alto-falante.
+      const silent = ctx.createGain();
+      silent.gain.value = 0;
       source.connect(processor);
-      processor.connect(ctx.destination);
+      processor.connect(silent);
+      silent.connect(ctx.destination);
 
       startRef.current = Date.now();
       timerRef.current = window.setInterval(() => {
@@ -90,6 +101,7 @@ export function useRecorder() {
 
     setPcm(floatToInt16(merged));
     setPcmRate(rate);
+    setLiveWave(null);
     setState((s) => ({ ...s, isRecording: false }));
   }, [pcmRate, stopTracks]);
 
@@ -105,5 +117,5 @@ export function useRecorder() {
     await ctx.close();
   }, []);
 
-  return { state, pcm, pcmRate, start, stop, loadFile, setPcm };
+  return { state, pcm, pcmRate, liveWave, start, stop, loadFile, setPcm };
 }

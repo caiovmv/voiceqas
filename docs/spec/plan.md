@@ -264,6 +264,28 @@ sequenceDiagram
 - Dockerfile multi-stage
 - README com exemplos `grpcurl`, `curl`, cliente WS
 
+### Fase 6 — Audio pipeline + media relay (branch `feature/audio-pipeline-media-relay`)
+
+**Concluído:**
+
+- `audio::decode_to_pcm` / `encode_from_pcm` unificados
+- AGC inbound (`AudioNormalizer`) configurável via YAML
+- Encode G.711 C++ + `RtpPacketizer`
+- G.722/G.729 stateful por sessão
+- `MediaSessionManager` (format lock, egress agente)
+- `MediaRelayServer` UDP `:10000`
+- REST: `/v1/media/sessions`, `.../agent-audio`
+- `pack-rtp` estendido para G.711
+
+**Pendente:**
+
+- Silero VAD C++ no STT (sherpa-onnx)
+- `proto/media.proto` + gRPC media
+- Enhancement neural (RNNoise) condicional
+- Tester-web: painel media relay
+
+Spec: [`docs/spec/audio-pipeline.md`](audio-pipeline.md). Memória de agente: [`AGENTS.md`](../../AGENTS.md).
+
 ---
 
 ## Configuração e portas (defaults)
@@ -273,6 +295,7 @@ server:
   rest_addr: "0.0.0.0:8080"
   grpc_addr: "0.0.0.0:50051"
   ws_addr: "0.0.0.0:8081"
+  media_rtp_addr: "0.0.0.0:10000"
 analyzer:
   frame_ms: 20
   window_ms: 500
@@ -280,6 +303,11 @@ analyzer:
   min_snr_db: 12
   max_clipping_ratio: 0.02
   max_silence_ratio: 0.60
+audio:
+  normalize_enabled: true
+  agc_target_rms_dbfs: -20
+media:
+  enabled: true
 ```
 
 Variáveis de ambiente sobrescrevem YAML (padrão 12-factor).

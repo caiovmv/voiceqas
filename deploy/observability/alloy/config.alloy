@@ -1,0 +1,56 @@
+// Collect Docker container logs and ship to Loki.
+discovery.docker "voiceqas" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+}
+
+discovery.relabel "voiceqas" {
+  targets = discovery.docker.voiceqas.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(voiceqas.*|command-center.*)"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "voiceqas" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.voiceqas.output
+  forward_to = [loki.write.voiceqas.receiver]
+}
+
+loki.write "voiceqas" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Receive OTLP traces (Beyla / future SDK) and forward to Tempo.
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

@@ -8,6 +8,8 @@ export type AudioFormat =
 
 export type SttModel = 'parakeet' | 'whisper' | 'auto';
 
+export type SttProvider = 'cpu' | 'cuda';
+
 export type Transport = 'rest' | 'websocket' | 'grpc';
 
 export interface CodecConfig {
@@ -19,6 +21,7 @@ export interface CodecConfig {
   simulatePacketLossPct: number;
   sessionId: string;
   sttModel: SttModel;
+  sttProvider: SttProvider;
 }
 
 export interface WindowMetrics {
@@ -31,22 +34,212 @@ export interface WindowMetrics {
   spectral_flatness: number;
   packet_loss_pct: number;
   jitter_ms: number;
+  speech_quality_score?: number;
   composite_score: number;
   stt_ready: boolean;
   session_id?: string;
 }
 
+export interface OpsVqaEvent extends WindowMetrics {
+  type: 'vqa_window';
+  session_id: string;
+}
+
+export interface ServiceHealth {
+  core: Record<string, unknown> | null;
+  stt: {
+    status?: string;
+    provider?: string;
+    providers_available?: string[];
+    cuda_compiled?: boolean;
+    models?: Array<{ id: string; name?: string; ready: boolean }>;
+  } | null;
+  lastCheck: number | null;
+  error: string | null;
+}
+
+export interface MediaSessionMeta {
+  session_id: string;
+  format: string | number;
+  sample_rate: number;
+  channel_id?: string;
+  remote_host?: string;
+  remote_port?: number;
+  inbound_host?: string;
+  inbound_port?: number;
+}
+
+export interface OpsSttEvent {
+  type: 'stt_final' | 'stt_partial';
+  session_id: string;
+  text: string;
+  model?: string;
+  language?: string;
+  ok?: boolean;
+  error?: string;
+  /** Latência ASR (ms) — tempo de processamento do recognizer. */
+  processing_ms?: number;
+  /** Duração do áudio reconhecido (ms). */
+  duration_ms?: number;
+  segments?: Array<{ start_ms: number; end_ms: number; text: string }>;
+  ts_ms?: number;
+}
+
+export interface OpsAlertEvent {
+  type: 'alert';
+  alert_kind: 'low_score' | 'stt_not_ready' | 'codec_suboptimal';
+  session_id: string;
+  ts_ms?: number;
+  composite_score?: number;
+  threshold?: number;
+  since_ms?: number;
+  preferred_codec?: string;
+  actual_codec?: string;
+  message?: string;
+  source?: string;
+}
+
+export interface PipelineStageMetrics {
+  bytes_in: number;
+  bytes_out: number;
+  bytes_per_sec: number;
+  composite_score: number;
+  jitter_ms: number;
+  latency_ms_p50: number;
+  latency_ms_p95: number;
+  packet_loss_pct: number;
+  dropped_bytes: number;
+  packets_in?: number;
+  packets_out?: number;
+  snr_db?: number;
+  rms_dbfs?: number;
+  stt_ready?: boolean;
+  processing_ms?: number;
+  buffer_ms?: number;
+}
+
+export interface PipelineNode {
+  name: string;
+  label: string;
+  direction: 'inbound' | 'outbound';
+  metrics: PipelineStageMetrics;
+}
+
+export interface PipelineLink {
+  source: string;
+  target: string;
+  value: number;
+}
+
+export interface TransportSankeyView {
+  direction: 'inbound' | 'outbound' | string;
+  nodes: PipelineNode[];
+  links: PipelineLink[];
+  echarts?: Record<string, unknown>;
+}
+
+export interface TransportSankeyPair {
+  inbound?: TransportSankeyView;
+  outbound?: TransportSankeyView;
+}
+
+/** Option ECharts Sankey embutida pelo backend (`build_echarts_sankey_option`). */
+export interface PipelineEchartsOption {
+  tooltip?: Record<string, unknown>;
+  series?: Array<{
+    type?: string;
+    data?: Array<{ name: string; value?: number; itemStyle?: { color?: string }; label?: string }>;
+    links?: Array<{ source: string; target: string; value: number }>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface PipelineSnapshot {
+  type?: 'pipeline_snapshot';
+  status: string;
+  scope: 'fleet' | 'session' | string;
+  codec?: string;
+  ts_ms: number;
+  session_id?: string;
+  nodes: PipelineNode[];
+  links: PipelineLink[];
+  echarts?: PipelineEchartsOption;
+  transport_sankey?: TransportSankeyPair;
+}
+
+export interface PipelineSessionsResponse {
+  status: string;
+  session_ids?: string[];
+  active_sessions?: Array<{ session_id: string; codec?: string; composite_score?: number }>;
+  finished_sessions?: Array<{ session_id: string; reason?: string }>;
+}
+
+export type OpsEvent = OpsVqaEvent | OpsSttEvent | OpsAlertEvent | PipelineSnapshot;
+
+export interface SessionAlert {
+  sessionId: string;
+  kind: 'low_score' | 'stt_not_ready' | 'codec_suboptimal';
+  message: string;
+}
+
+export interface TrackedSession {
+  sessionId: string;
+  firstSeen: number;
+  lastSeen: number;
+  latest?: WindowMetrics;
+  history: WindowMetrics[];
+  mediaMeta?: MediaSessionMeta;
+  lastStt?: OpsSttEvent;
+  sttNotReadySince?: number;
+}
+
+export interface MediaSessionResponse {
+  status: string;
+  session_id: string;
+  format: number;
+  sample_rate: number;
+}
+
 export interface BatchResult {
   composite_score: number;
   stt_ready: boolean;
+  aggregated?: WindowMetrics;
+  /** Weighted mean of speech windows only (weight = 1 - silence_ratio). */
+  speech_aggregated?: WindowMetrics;
+  speech_window_count?: number;
+  /** Individual speech windows (silence_ratio <= max_silence_ratio). */
+  speech_windows?: WindowMetrics[];
   windows: WindowMetrics[];
   stt_ready_segments: Array<{ start_ms: number; end_ms: number }>;
+  ready_window_count?: number;
+  ready_ratio?: number;
+  snr_std?: number;
+  stt_risk?: number;
 }
 
 export interface SttSegment {
   start_ms: number;
   end_ms: number;
   text: string;
+  speaker_id?: number;
+}
+
+export interface DiarizationTurn {
+  start_ms: number;
+  end_ms: number;
+  rms_dbfs?: number;
+  speaker_id: number;
+  is_primary?: boolean;
+  text?: string;
+}
+
+export interface DiarizationSpeaker {
+  speaker_id: number;
+  is_primary: boolean;
+  duration_ms: number;
+  turn_count: number;
+  role: 'primary' | 'secondary' | string;
 }
 
 export interface SttResult {
@@ -58,6 +251,12 @@ export interface SttResult {
   segments: SttSegment[];
   ok: boolean;
   error?: string;
+  diarization?: {
+    turns: DiarizationTurn[];
+    primary_speaker: number;
+    speaker_count?: number;
+    speakers?: DiarizationSpeaker[];
+  };
 }
 
 export const FORMAT_ENUM: Record<AudioFormat, number> = {
@@ -72,7 +271,7 @@ export const FORMAT_ENUM: Record<AudioFormat, number> = {
 export const COMPARE_PRESETS: Array<{
   id: string;
   label: string;
-  config: Omit<CodecConfig, 'sessionId' | 'sttModel'>;
+  config: Omit<CodecConfig, 'sessionId' | 'sttModel' | 'sttProvider'>;
 }> = [
   {
     id: 'pcm8',
@@ -181,16 +380,68 @@ export function formatConfigLabel(config: CodecConfig): string {
   return `${fmt} @ ${config.sampleRate}Hz${extras.length ? ` (${extras.join(', ')})` : ''}`;
 }
 
+export function newTestSessionId(): string {
+  return `web-${Date.now()}`;
+}
+
 export const DEFAULT_CODEC: CodecConfig = {
-  format: 'pcm_s16le_8k',
-  sampleRate: 8000,
+  format: 'rtp_g722',
+  sampleRate: 16000,
   frameMs: 20,
   simulateClipping: false,
   clippingGain: 3.5,
   simulatePacketLossPct: 0,
-  sessionId: `web-${Date.now()}`,
+  sessionId: newTestSessionId(),
   sttModel: 'auto',
+  sttProvider: 'cpu',
 };
+
+export type RecordQualityId = 'g722' | 'g711' | 'pcm16';
+
+/** Qualidade de gravação / simulação SIP no tester (radio). */
+export const RECORD_QUALITY_OPTIONS: Array<{
+  id: RecordQualityId;
+  label: string;
+  description: string;
+  format: AudioFormat;
+  sampleRate: 8000 | 16000;
+}> = [
+  {
+    id: 'g722',
+    label: 'G.722',
+    description: 'Wideband 16 kHz (PT 9) — padrão produção',
+    format: 'rtp_g722',
+    sampleRate: 16000,
+  },
+  {
+    id: 'g711',
+    label: 'G.711',
+    description: 'μ-law 8 kHz (PCMU) — narrowband',
+    format: 'rtp_pcmu',
+    sampleRate: 8000,
+  },
+  {
+    id: 'pcm16',
+    label: 'PCM 16 kHz',
+    description: 'PCM S16LE sem compressão',
+    format: 'pcm_s16le_16k',
+    sampleRate: 16000,
+  },
+];
+
+export const STT_TARGET_SAMPLE_RATE = 16000;
+
+export function recordQualityIdForConfig(config: CodecConfig): RecordQualityId {
+  const match = RECORD_QUALITY_OPTIONS.find(
+    (o) => o.format === config.format && o.sampleRate === config.sampleRate,
+  );
+  return match?.id ?? 'g722';
+}
+
+export function configForRecordQuality(id: RecordQualityId): Pick<CodecConfig, 'format' | 'sampleRate'> {
+  const opt = RECORD_QUALITY_OPTIONS.find((o) => o.id === id) ?? RECORD_QUALITY_OPTIONS[0];
+  return { format: opt.format, sampleRate: opt.sampleRate };
+}
 
 export function sampleRateForFormat(format: AudioFormat): 8000 | 16000 {
   if (format === 'pcm_s16le_16k' || format === 'rtp_g722') return 16000;

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <mutex>
+#include <memory>
+#include <shared_mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -9,8 +10,11 @@
 #include <vector>
 
 #include "voiceqas/metrics.hpp"
+#include "voiceqas/ports/metrics_publisher.hpp"
+#include "voiceqas/ports/pipeline_telemetry.hpp"
 #include "voiceqas/rtp/depacketizer.hpp"
 #include "voiceqas/stt_gate.hpp"
+#include "voiceqas/audio/dsp/channel_strip.hpp"
 
 namespace voiceqas {
 
@@ -42,9 +46,17 @@ private:
     double compute_spectral_flatness(std::span<const int16_t> samples);
 };
 
-class SessionManager {
+class VqaSessionManager {
 public:
-    explicit SessionManager(AnalyzerConfig default_config);
+    VqaSessionManager(
+        AnalyzerConfig default_config,
+        audio::AudioProcessingConfig audio_config,
+        std::shared_ptr<ports::IMetricsPublisher> metrics,
+        std::shared_ptr<ports::IPipelineTelemetry> telemetry);
+
+    VqaSessionManager(AnalyzerConfig default_config, audio::AudioProcessingConfig audio_config = {});
+
+    const audio::AudioProcessingConfig& audio_config() const { return audio_config_; }
 
     std::optional<WindowMetrics> push_frame(
         const std::string& session_id,
@@ -52,10 +64,23 @@ public:
         std::span<const uint8_t> payload,
         int64_t timestamp_ms);
 
+    /**
+     * @param apply_agc When false, PCM is assumed already normalized (e.g. shared
+     *   RTP ingress AGC + RNNoise). When true (default), per-session AGC+enhancement run.
+     */
+    std::optional<WindowMetrics> push_pcm(
+        const std::string& session_id,
+        std::span<const int16_t> pcm,
+        int64_t timestamp_ms,
+        int sample_rate,
+        bool apply_agc = true);
+
     BatchResult analyze_batch(
         AudioFormat format,
         std::span<const uint8_t> payload,
-        int sample_rate);
+        int sample_rate,
+        const std::optional<std::string>& telemetry_session_id = std::nullopt,
+        const std::optional<audio::AudioProcessingConfig>& audio_override = std::nullopt);
 
     void remove_session(const std::string& session_id);
 
@@ -63,11 +88,15 @@ private:
     struct SessionState {
         std::optional<VoiceAnalyzer> analyzer;
         std::optional<rtp::RtpDepacketizer> rtp;
+        audio::VoiceChannelStrip strip;
     };
 
     AnalyzerConfig default_config_;
+    audio::AudioProcessingConfig audio_config_;
+    std::shared_ptr<ports::IMetricsPublisher> metrics_;
+    std::shared_ptr<ports::IPipelineTelemetry> telemetry_;
     std::unordered_map<std::string, SessionState> sessions_;
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
 };
 
 }  // namespace voiceqas

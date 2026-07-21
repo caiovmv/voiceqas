@@ -128,6 +128,8 @@ void RtpDepacketizer::reset() {
     packets_received_ = 0;
     packets_lost_ = 0;
     jitter_ms_ = 0.0;
+    g722_decoder_.reset();
+    g729_decoder_.reset();
 }
 
 RtpDepacketizer::DecodeResult RtpDepacketizer::decode_packet(
@@ -171,10 +173,16 @@ RtpDepacketizer::DecodeResult RtpDepacketizer::decode_packet(
             result.pcm = decode_g711_pcma(pl);
             break;
         case PayloadType::G722:
-            result.pcm = decode_g722_payload(pl);
+            if (!g722_decoder_) {
+                g722_decoder_ = std::make_unique<G722Decoder>();
+            }
+            result.pcm = g722_decoder_->decode(pl);
             break;
         case PayloadType::G729:
-            result.pcm = decode_g729_payload(pl);
+            if (!g729_decoder_) {
+                g729_decoder_ = std::make_unique<G729Decoder>();
+            }
+            result.pcm = g729_decoder_->decode(pl);
             break;
     }
 

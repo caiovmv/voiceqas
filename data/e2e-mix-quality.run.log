@@ -1,0 +1,16 @@
+﻿winner mix: winner rnnoise= False silero= True
+== chamada_c1f8e735-b04c-4b5b-9dd0-5d380d6be330.wav ==
+  STT H0ÔÇª
+  VQA H0ÔÇª
+  STT DEFÔÇª
+  VQA DEFÔÇª
+OK kr L=0.50 A=0.50 ready L=0.55 A=0.52
+== chamada_nespresso_cliente_testando.wav ==
+  STT H0ÔÇª
+  VQA H0ÔÇª
+  STT DEFÔÇª
+  VQA DEFÔÇª
+OK kr L=0.50 A=0.50 ready L=0.48 A=0.45
+OK llm smoke
+ALL PASS
+EXIT:0
