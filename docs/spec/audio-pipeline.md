@@ -145,6 +145,34 @@ Integração SBC: voiceqas é **media plane only** (sem SIP INVITE/SDP). O SBC r
 
 ## APIs REST
 
+### Tools: process-audio (WAV tratado)
+
+Único endpoint que **devolve áudio processado** (mono PCM16 WAV). Aplica `VoiceChannelStrip` na timeline completa (sem máscara Silero). Não dispara STT.
+
+`POST /v1/tools/process-audio` — host Docker: `http://localhost:9080`
+
+| Header | Uso |
+|--------|-----|
+| `Content-Type` | `audio/wav` ou `application/octet-stream` |
+| `X-Audio-Format` | `pcm_s16le_16k`, `rtp_g722`, … (obrigatório se raw PCM) |
+| `X-Sample-Rate` | ex. `16000` |
+| `X-Audio-AGC` / `X-Audio-Enhancement` | `0`/`1` (aliases strip) |
+| `X-Audio-Strip` | JSON `ChannelStripConfig` |
+| `X-Session-Id` | opcional (telemetria) |
+
+```bash
+curl -sS -X POST "http://localhost:9080/v1/tools/process-audio" \
+  -H "Content-Type: audio/wav" \
+  -H "X-Audio-AGC: 1" \
+  -H "X-Audio-Enhancement: 0" \
+  --data-binary @input.wav \
+  -o voiceqas-mix-strip.wav
+```
+
+**WS `/v1/stream` e gRPC `AnalyzeBatch` / `AnalyzeStream`** compartilham o mesmo strip no analyze path, mas respondem só com **métricas** (`QualityReport` / `BatchResponse`), não com PCM/WAV. Exemplos curl/ws/grpcurl: [`README.md`](../../README.md#audio-pipeline-sem-stt).
+
+OpenAPI: [`openapi/voiceqas.yaml`](../../openapi/voiceqas.yaml) → `/v1/tools/process-audio`.
+
 ### Registrar sessão
 
 `POST /v1/media/sessions`
@@ -182,8 +210,9 @@ Resposta:
 
 ### Ferramentas codec
 
+- `POST /v1/tools/process-audio` — decode + channel strip → **WAV** (ver acima)
 - `POST /v1/tools/pack-rtp` — PCM → RTP (PCMU, PCMA, G.722, G.729)
-- `POST /v1/tools/decode-rtp` — RTP → PCM
+- `POST /v1/tools/decode-rtp` — RTP → PCM (decode only, sem strip)
 
 ## Variáveis de ambiente
 
@@ -215,6 +244,7 @@ Resposta:
 
 ## Referências
 
+- Guia rápido curl (REST / WS / gRPC sem STT): [`README.md`](../../README.md#audio-pipeline-sem-stt)
 - VQA e métricas: [`voice-quality-assessment.md`](voice-quality-assessment.md)
 - Matriz DSP STT / inteligibilidade: [`dsp-stt-intelligibility-matrix.md`](dsp-stt-intelligibility-matrix.md)
 - Plano arquitetural: [`plan.md`](plan.md)

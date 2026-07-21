@@ -20,13 +20,15 @@ Contexto para desenvolvimento com agentes: [`AGENTS.md`](AGENTS.md).
 
 ## Interfaces
 
-| Interface | Porta | Uso |
-|-----------|-------|-----|
-| REST + Docs + UI | 8080 | API batch, **STT**, media sessions, Swagger |
-| WebSocket | 8081 | VQA `/v1/stream` · STT `/v1/stt/stream` |
-| gRPC | 50051 | `VoiceQualityService` + `SpeechToTextService` |
-| **Media RTP (UDP)** | **10000** | Relay inbound interlocutor + outbound agente G.711/G.722/G.729 |
-| **Tester Web (React 19)** | **3000** | Gravação, codecs, VQA e STT |
+| Interface | Interno (container) | Host Docker Compose | Uso |
+|-----------|---------------------|---------------------|-----|
+| REST + Docs + UI | 8080 | **9080** | API batch, process-audio, **STT**, media, Swagger |
+| WebSocket | 8081 | **9081** | VQA `/v1/stream` · STT `/v1/stt/stream` · ops |
+| gRPC | 50051 | **9051** | `VoiceQualityService` + `SpeechToTextService` + `MediaRelayService` |
+| **Media RTP (UDP)** | **10000** | **10000** | Relay inbound interlocutor + outbound agente |
+| **Tester Web (React 19)** | 80 | **3000** | Gravação, codecs, VQA e STT |
+
+Exemplos curl abaixo usam as **portas host** (`9080` / `9081` / `9051`). Build local sem compose: `8080` / `8081` / `50051`.
 
 ## Docker (recomendado)
 
@@ -82,14 +84,14 @@ docker compose up
 
 O arquivo `/app/dependency-versions.txt` dentro do container lista as libs instaladas pelo vcpkg no build.
 
-Acesse:
+Acesse (host Docker):
 
 - **Tester React:** http://localhost:3000
-- **Console legado:** http://localhost:8080/ui/
-- **Swagger UI:** http://localhost:8080/docs/swagger
-- **ReDoc:** http://localhost:8080/docs/redoc
-- **WebSocket tester:** http://localhost:8080/ui/ws.html
-- **gRPC playground:** http://localhost:8080/ui/grpc.html
+- **Swagger UI:** http://localhost:9080/docs/swagger
+- **ReDoc:** http://localhost:9080/docs/redoc
+- **Console legado:** http://localhost:9080/ui/
+- **WebSocket tester:** http://localhost:9080/ui/ws.html
+- **gRPC playground:** http://localhost:9080/ui/grpc.html
 
 ### Imagem leve
 
@@ -123,21 +125,133 @@ cmake -B build -G Ninja \
 cmake --build build
 ```
 
-## gRPC nativo (grpcurl)
+## Audio pipeline (sem STT)
+
+O channel strip (`Decode → NR → HPF → EQ → DeEss → Comp → Lim → AGC`) corre no ingress independentemente do STT estar ligado. Com STT ativo no serviço, **estes endpoints não disparam transcrição**; para ASR use `/v1/stt/*` (seção abaixo).
+
+| Transport | Endpoint | O que volta |
+|-----------|----------|-------------|
+| **REST** | `POST /v1/tools/process-audio` | **WAV mono PCM16 tratado** (único path que devolve áudio) |
+| **WebSocket** | `ws://…/v1/stream` | JSON `QualityReport` por janela (~500 ms) |
+| **gRPC** | `AnalyzeBatch` / `AnalyzeStream` | JSON scores / `QualityReport` (não PCM) |
+
+Defaults S15: NR off, DeEss off, mild EQ, soft compressor, limiter −1 dBFS, AGC −18 dBFS. Knobs: `X-Audio-AGC`, `X-Audio-Enhancement`, `X-Audio-Strip` (JSON). Spec: [`docs/spec/audio-pipeline.md`](docs/spec/audio-pipeline.md).
+
+### REST — obter áudio tratado
 
 ```bash
-grpcurl -plaintext localhost:50051 voiceqas.v1.VoiceQualityService/Ready
-grpcurl -plaintext localhost:50051 voiceqas.v1.SpeechToTextService/Ready
+# WAV → WAV processado (format/rate inferidos do RIFF)
+curl -sS -X POST "http://localhost:9080/v1/tools/process-audio" \
+  -H "Content-Type: audio/wav" \
+  -H "X-Session-Id: strip-lab-1" \
+  -H "X-Audio-AGC: 1" \
+  -H "X-Audio-Enhancement: 0" \
+  --data-binary @input.wav \
+  -o voiceqas-mix-strip.wav
+
+# PCM16 LE 16 kHz cru → WAV processado (+ strip S15 via header)
+curl -sS -X POST "http://localhost:9080/v1/tools/process-audio" \
+  -H "Content-Type: application/octet-stream" \
+  -H "X-Audio-Format: pcm_s16le_16k" \
+  -H "X-Sample-Rate: 16000" \
+  -H "X-Audio-AGC: 1" \
+  -H "X-Audio-Enhancement: 0" \
+  -H 'X-Audio-Strip: {"nr":{"enabled":false,"wet_dry":1.0},"hpf":{"enabled":true,"cutoff_hz":80},"eq":{"enabled":true,"bands":[{"freq_hz":250,"gain_db":-1.5,"q":1.0},{"freq_hz":450,"gain_db":-1.0,"q":1.2},{"freq_hz":2500,"gain_db":1.0,"q":0.8},{"freq_hz":3500,"gain_db":1.0,"q":0.8}]},"deesser":{"enabled":false},"compressor":{"enabled":true,"threshold_db":-20,"ratio":2,"attack_ms":5,"release_ms":80,"makeup_db":0},"limiter":{"enabled":true,"ceiling_dbfs":-1},"agc":{"enabled":true,"target_rms_dbfs":-18,"max_gain_db":24,"attack_ms":5,"release_ms":100}}' \
+  --data-binary @input.pcm \
+  -o voiceqas-mix-strip.wav
 ```
+
+Resposta: `Content-Type: audio/wav`, header `X-Sample-Rate`. Timeline completa (sem máscara Silero).
+
+Análise só métricas (strip aplicado, sem WAV de volta):
+
+```bash
+curl -sS -X POST "http://localhost:9080/v1/analyze/batch" \
+  -H "Content-Type: application/octet-stream" \
+  -H "X-Audio-Format: pcm_s16le_16k" \
+  -H "X-Sample-Rate: 16000" \
+  -H "X-Audio-AGC: 1" \
+  -H "X-Audio-Enhancement: 0" \
+  --data-binary @input.pcm | jq
+```
+
+### WebSocket — stream pelo pipeline
+
+Handshake JSON, depois frames **binários** PCM/RTP. Resposta: JSON de qualidade (não áudio).
+
+```bash
+# Requer websocat: https://github.com/vi/websocat
+# Terminal 1 — conexão + handshake
+printf '%s\n' '{"session_id":"ws-strip-1","format":"pcm_s16le_16k"}' \
+  | websocat -b ws://localhost:9081/v1/stream
+
+# Terminal 2 — (mesmo socket) enviar PCM: use um cliente que mande binary frames
+# Exemplo com Python (após handshake OK):
+python - <<'PY'
+import asyncio, json, pathlib, websockets
+async def main():
+    uri = "ws://localhost:9081/v1/stream"
+    pcm = pathlib.Path("input.pcm").read_bytes()
+    async with websockets.connect(uri) as ws:
+        await ws.send(json.dumps({"session_id": "ws-strip-1", "format": "pcm_s16le_16k"}))
+        print(await ws.recv())  # {"status":"ok","mode":"quality"}
+        # chunks ~20 ms @ 16 kHz mono s16le = 640 bytes
+        for i in range(0, len(pcm), 640):
+            await ws.send(pcm[i:i+640])
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=0.05)
+                print(msg)
+            except asyncio.TimeoutError:
+                pass
+asyncio.run(main())
+PY
+```
+
+### gRPC — AnalyzeBatch / AnalyzeStream
+
+Host compose: `localhost:9051` (plaintext).
+
+```bash
+grpcurl -plaintext localhost:9051 voiceqas.v1.VoiceQualityService/Ready
+
+# AnalyzeBatch: payload = bytes do PCM (grpcurl lê arquivo com @)
+# Formato enum: PCM_S16LE_16K = 2
+grpcurl -plaintext -d @ localhost:9051 voiceqas.v1.VoiceQualityService/AnalyzeBatch <<EOF
+{
+  "format": "PCM_S16LE_16K",
+  "sample_rate": 16000,
+  "payload": "$(base64 -w0 input.pcm 2>/dev/null || base64 -i input.pcm)"
+}
+EOF
+```
+
+Sem `grpcurl`, use o bridge HTTP (mesmo strip / métricas, sem STT):
+
+```bash
+# payload_bytes = array de bytes PCM, ou payload_base64
+python - <<'PY' | curl -sS -X POST "http://localhost:9080/v1/playground/grpc/analyze-batch" \
+  -H "Content-Type: application/json" -d @- | jq
+import json, pathlib, base64
+pcm = pathlib.Path("input.pcm").read_bytes()
+print(json.dumps({
+    "format": "pcm_s16le_16k",
+    "sample_rate": 16000,
+    "session_id": "grpc-strip-1",
+    "payload_base64": base64.b64encode(pcm).decode(),
+}))
+PY
+```
+
+Playground no browser: http://localhost:9080/ui/grpc.html · SSE stream: `POST /v1/playground/grpc/analyze-stream`.
 
 ## STT (transcrição)
 
 ```bash
 # Readiness do motor STT
-curl -s http://localhost:8080/v1/stt/ready | jq
+curl -s http://localhost:9080/v1/stt/ready | jq
 
 # Transcrever WAV
-curl -s -X POST http://localhost:8080/v1/stt/transcribe \
+curl -s -X POST http://localhost:9080/v1/stt/transcribe \
   -H "Content-Type: audio/wav" \
   -H "X-STT-Model: auto" \
   --data-binary @gravacao.wav | jq
@@ -152,8 +266,9 @@ Documentação completa: [`docs/spec/audio-pipeline.md`](docs/spec/audio-pipelin
 ### Registrar sessão
 
 ```bash
-curl -s -X POST http://localhost:8080/v1/media/sessions \
+curl -s -X POST http://localhost:9080/v1/media/sessions \
   -H "Content-Type: application/json" \
+  -H "X-Ops-Token: dev-write" \
   -d '{
     "session_id": "call-1",
     "format": "rtp_pcmu",
@@ -166,7 +281,8 @@ curl -s -X POST http://localhost:8080/v1/media/sessions \
 ### Enviar áudio do agente (PCM16 → G.711 → RTP/UDP)
 
 ```bash
-curl -s -X POST http://localhost:8080/v1/media/sessions/call-1/agent-audio \
+curl -s -X POST http://localhost:9080/v1/media/sessions/call-1/agent-audio \
+  -H "X-Ops-Token: dev-write" \
   -H "Content-Type: application/octet-stream" \
   -H "X-Sample-Rate: 16000" \
   --data-binary @agent.pcm | jq
@@ -175,10 +291,11 @@ curl -s -X POST http://localhost:8080/v1/media/sessions/call-1/agent-audio \
 ### Encerrar sessão
 
 ```bash
-curl -s -X DELETE http://localhost:8080/v1/media/sessions/call-1
+curl -s -X DELETE http://localhost:9080/v1/media/sessions/call-1 \
+  -H "X-Ops-Token: dev-write"
 ```
 
-RTP inbound do interlocutor: enviar pacotes UDP para `localhost:10000`. O pipeline aplica decode + AGC antes de VQA/STT.
+RTP inbound do interlocutor: enviar pacotes UDP para `localhost:10000`. O pipeline aplica decode + channel strip antes de VQA/STT.
 
 ## Variáveis de ambiente
 
@@ -205,7 +322,7 @@ O serviço expõe endpoints HTTP que espelham o contrato protobuf para testes se
 - `POST /v1/playground/grpc/analyze-batch`
 - `POST /v1/playground/grpc/analyze-stream` (SSE)
 
-Produção deve usar gRPC na porta 50051.
+Produção / Docker Compose: gRPC na porta host **9051** (interno 50051).
 
 ## Atualizar dependências
 
